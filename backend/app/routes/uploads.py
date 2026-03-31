@@ -1,12 +1,13 @@
 from pathlib import Path
 from uuid import uuid4
 from uuid import UUID
+from app.config import settings
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 router = APIRouter()
 
-UPLOAD_DIR = Path("app/uploads")
+UPLOAD_DIR = settings.UPLOAD_DIR
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 

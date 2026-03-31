@@ -1,11 +1,12 @@
 from pathlib import Path
+from app.config import settings
 import csv
 
 from fastapi import APIRouter, HTTPException
 
 router = APIRouter()
 
-UPLOAD_DIR = Path("app/uploads")
+UPLOAD_DIR = settings.UPLOAD_DIR
 
 
 def infer_type(values: list[str]) -> str:

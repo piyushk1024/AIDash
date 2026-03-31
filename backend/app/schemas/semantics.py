@@ -1,5 +1,6 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
+# from app.services.database import get_cached_semantics, persist_semantics
 
 
 class SemanticColumn(BaseModel):
