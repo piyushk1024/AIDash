@@ -1,7 +1,6 @@
 import csv
 from pathlib import Path
 
-
 def infer_basic_type(values: list[str]) -> str:
     non_empty = [v for v in values if v not in (None, "", "null", "NULL")]
     if not non_empty:
