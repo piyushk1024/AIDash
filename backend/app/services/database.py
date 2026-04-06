@@ -53,3 +53,30 @@ def persist_dashboard_plan(dataset_id: str, plan: dict):
                 (dataset_id, json.dumps(plan))
             )
         conn.commit()
+
+def persist_dataset_metadata(dataset_id: str, table_name: str, metabase_table_id: int, field_map: dict):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dataset_metadata (dataset_id, table_name, metabase_table_id, field_map)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (dataset_id) DO UPDATE
+                SET table_name = EXCLUDED.table_name,
+                    metabase_table_id = EXCLUDED.metabase_table_id,
+                    field_map = EXCLUDED.field_map,
+                    updated_at = NOW()
+                """,
+                (dataset_id, table_name, metabase_table_id, json.dumps(field_map))
+            )
+        conn.commit()
+
+def get_dataset_metadata(dataset_id: str):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT table_name, metabase_table_id, field_map FROM dataset_metadata WHERE dataset_id = %s",
+                (dataset_id,)
+            )
+            row = cur.fetchone()
+            return dict(row) if row else None

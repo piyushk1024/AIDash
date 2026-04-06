@@ -1,9 +1,10 @@
 from pathlib import Path
-from uuid import uuid4
-from uuid import UUID
+from uuid import uuid4, UUID
 from app.config import settings
-
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
+from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table
+from app.services.database import persist_dataset_metadata
 
 router = APIRouter()
 
@@ -26,12 +27,36 @@ async def upload_csv(file: UploadFile = File(...)):
     content = await file.read()
     save_path.write_bytes(content)
 
+    table_name = sanitise_table_name(file.filename)
+
+    try:
+        load_result = load_csv_to_postgres(save_path, table_name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}")
+
+    try:
+        token = get_session_token()
+        trigger_metabase_sync(token)
+        metabase_result = fetch_field_map_for_table(token, table_name)
+    except TimeoutError as e:
+        raise HTTPException(status_code=504, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Metabase sync failed: {str(e)}")
+
+    persist_dataset_metadata(
+        dataset_id=dataset_id,
+        table_name=table_name,
+        metabase_table_id=metabase_result["table_id"],
+        field_map=metabase_result["field_map"]
+    )
+
     return {
         "dataset_id": dataset_id,
         "original_filename": file.filename,
-        "saved_filename": safe_name,
-        "size_bytes": len(content),
-        "content_type": file.content_type,
+        "table_name": table_name,
+        "row_count": load_result["row_count"],
+        "metabase_table_id": metabase_result["table_id"],
+        "field_map": metabase_result["field_map"]
     }
 
 
@@ -52,12 +77,10 @@ async def list_datasets():
         except ValueError:
             continue
 
-        datasets.append(
-            {
-                "dataset_id": dataset_id,
-                "original_filename": original_filename,
-                "saved_filename": name,
-            }
-        )
+        datasets.append({
+            "dataset_id": dataset_id,
+            "original_filename": original_filename,
+            "saved_filename": name,
+        })
 
     return {"datasets": datasets}
