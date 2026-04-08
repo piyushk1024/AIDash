@@ -4,49 +4,73 @@ from app.config import settings
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-def generate_dashboard_plan(dataset_id: str, semantics: dict) -> dict:
-    
+def generate_dashboard_plan(dataset_id: str, semantics: dict, profile: dict) -> dict:
+
     prompt = f"""
-    You are a BI analyst. Given the semantic profile of a dataset, recommend a set of dashboard charts.
+You are a BI analyst planning a Metabase dashboard. You will reason in two passes before producing output.
 
-    Dataset semantics:
-    {json.dumps(semantics, indent=2)}
+Dataset semantics:
+{json.dumps(semantics, indent=2)}
 
-    Return ONLY a JSON object with exactly these fields:
-    - dataset_id: string
-    - dashboard_title: string
-    - charts: list of objects, each with:
-        - chart_id: a short unique slug (e.g. "matches-by-season")
-        - chart_title: string
-        - chart_type: one of "line", "bar", "scalar", "pie"
-        - aggregation: one of "count", "sum", "avg" — choose based on chart intent
-        - x_axis: column name for grouping/breakdown. Required for bar, line, pie. For scalar, use null.
-        - y_axis: column name to aggregate. Required for sum and avg. For count, use null.
-        - filters: empty list for now
-        - reasoning: one sentence explaining why this chart is useful
-    When selecting charts, go beyond simple counts and averages. Look for:
-    - Records and extremes (highest, lowest, most frequent values)
-    - Relationships between two columns that might reveal a pattern or correlation
-    - Distributions that reveal imbalance or skew
-    - Rankings (top N by a measure)
-    - Trends that show change over time
-    - Ratios or rates that are more meaningful than raw counts
-    Avoid obvious filler charts like simple row counts unless they serve as a genuine KPI.
+Dataset profile (stats, value_counts, correlations, grouped_stats):
+{json.dumps(profile, indent=2)}
 
-    Rules:
-    - Use aggregation "count" when counting rows (e.g. number of matches). Set y_axis to null for count charts.
-    - Use aggregation "sum" or "avg" when measuring a numeric column.
-    - scalar charts must have x_axis null and y_axis null or a single numeric column.
-    - Never invent column names. Only use column names present in the dataset semantics.
+---
 
-    Aim for 5 to 8 charts. Do not include markdown. Return raw JSON only.
-    """
+PASS 1 — Questions:
+Identify the 4 to 6 most interesting analytical questions this dataset can answer. Think about:
+- What are the highest and lowest performing entities?
+- Are there distributions that reveal imbalance or skew?
+- Are there correlations between columns worth surfacing?
+- Are there trends over time if date columns exist?
+- Are there heterogeneous numeric columns that need to be broken out by a categorical?
+- What would a domain expert want to know first?
+
+PASS 2 — Charts:
+For each question from Pass 1, plan one chart that answers it directly.
+
+---
+
+HARD CONSTRAINTS — these are non-negotiable:
+- Only use columns where chartable is true
+- Never use identifier or serial number columns as x_axis or y_axis
+- No two charts may share the same (x_axis, y_axis, aggregation) combination
+- Do not plan ratios, rates, or derived columns — Metabase cannot compute them
+- Do not plan top-N charts — Metabase cannot filter to top N in basic query mode
+- bar and line charts must have a non-null x_axis
+- scalar charts must have x_axis null
+- sum and avg aggregations require a non-null y_axis
+- count aggregation must have y_axis null
+- Only use column names that exist exactly as written in the semantics
+
+METABASE CAPABILITIES — only these are supported:
+- aggregations: count, sum, avg
+- chart types: bar, line, scalar, pie
+- one x_axis column, one y_axis column, no multi-series
+
+---
+
+Return ONLY a JSON object with exactly these fields:
+- dataset_id: string
+- dashboard_title: string
+- charts: list of objects, each with:
+    - chart_id: short unique slug
+    - chart_title: string
+    - chart_type: one of "line", "bar", "scalar", "pie"
+    - aggregation: one of "count", "sum", "avg"
+    - x_axis: column name or null
+    - y_axis: column name or null
+    - filters: empty list
+    - reasoning: one sentence tying this chart back to a specific analytical question
+
+Aim for 5 to 7 charts. Do not include markdown. Return raw JSON only.
+"""
 
     response = client.models.generate_content(
         model="gemini-2.5-flash-lite",
         contents=prompt
     )
-    
+
     raw = response.text.strip()
     if raw.startswith("```"):
         raw = raw.split("```")[1]

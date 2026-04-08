@@ -80,3 +80,38 @@ def get_dataset_metadata(dataset_id: str):
             )
             row = cur.fetchone()
             return dict(row) if row else None
+        
+def persist_metabase_dashboard_id(dataset_id: str, dashboard_id: int):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE dataset_metadata
+                SET metabase_dashboard_id = %s
+                WHERE dataset_id = %s
+                """,
+                (dashboard_id, dataset_id)
+            )
+        conn.commit()
+
+def get_dashboard_cards(dataset_id: str) -> list[int]:
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT plan_json FROM dashboard_plans WHERE dataset_id = %s ORDER BY created_at DESC LIMIT 1",
+                (dataset_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                return []
+            plan = row[0]
+            return [chart["card_id"] for chart in plan.get("cards", [])] if "cards" in plan else []
+
+def delete_dataset(dataset_id: str, table_name: str):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            cur.execute("DELETE FROM dashboard_plans WHERE dataset_id = %s", (dataset_id,))
+            cur.execute("DELETE FROM dataset_semantics WHERE dataset_id = %s", (dataset_id,))
+            cur.execute("DELETE FROM dataset_metadata WHERE dataset_id = %s", (dataset_id,))
+        conn.commit()

@@ -10,29 +10,40 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     hint_line = f"Business context: {business_hint}" if business_hint else ""
     
     prompt = f"""
-You are a data analyst. Analyse the dataset profile below and classify every column.
+    You are a data analyst. Analyse the dataset profile below and classify every column.
 
-{hint_line}
+    {hint_line}
 
-Dataset profile:
-{json.dumps(dataset_profile, indent=2)}
+    Dataset profile:
+    {json.dumps(dataset_profile, indent=2)}
 
-Return ONLY a JSON object with exactly these fields:
-- dataset_id: string
-- business_hint: string or null
-- dataset_grain: string (e.g. "daily per mall")
-- date_columns: list of {{column, semantic_role, confidence}}
-- dimensions: list of {{column, semantic_role, confidence}}
-- measures: list of {{column, semantic_role, confidence}}
-- flags: list of {{column, semantic_role, confidence}}
-- identifiers: list of {{column, semantic_role, confidence}}
-- unknown: list of {{column, semantic_role, confidence}}
-- notes: list of strings
+    Before classifying columns, reason through the following:
+    - Use value_counts to understand categorical distributions and spot columns with mixed or heterogeneous meaning
+    - Use grouped_stats to detect numeric columns that behave differently depending on another column's value (e.g. a margin column that means different things depending on a result type column). Flag these in your notes.
+    - Use stats (mean, std, min, max) to understand numeric scale and detect outliers or summary rows
+    - If a numeric column appears heterogeneous, reflect that in its semantic_role and add a note explaining the grouping
 
-Confidence is a float between 0 and 1.
-Do not include any explanation or markdown. Return raw JSON only.
-"""
+    Return ONLY a JSON object with exactly these fields:
+    - dataset_id: string
+    - business_hint: string or null
+    - dataset_grain: string (e.g. "daily per mall")
+    - date_columns: list of {{column, semantic_role, confidence, chartable}}
+    - dimensions: list of {{column, semantic_role, confidence, chartable}}
+    - measures: list of {{column, semantic_role, confidence, chartable}}
+    - flags: list of {{column, semantic_role, confidence, chartable}}
+    - identifiers: list of {{column, semantic_role, confidence, chartable}}
+    - unknown: list of {{column, semantic_role, confidence, chartable}}
+    - notes: list of strings
 
+    Rules for chartable:
+    - Set chartable: false for serial numbers, row IDs, and any column that is purely an identifier with no analytical value
+    - Set chartable: false for columns with more than 50 distinct values where those values are not meaningful categories (e.g. free text, unique names)
+    - Set chartable: true for all measures, flags, date columns, and meaningful categorical dimensions
+    - Default to true when uncertain
+
+    Confidence is a float between 0 and 1.
+    Do not include any explanation or markdown. Return raw JSON only.
+    """
     response = client.models.generate_content(
     model="gemini-2.5-flash-lite",
     contents=prompt)
