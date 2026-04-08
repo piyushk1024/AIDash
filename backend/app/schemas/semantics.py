@@ -7,6 +7,7 @@ class SemanticColumn(BaseModel):
     column: str
     semantic_role: str
     confidence: float = Field(ge=0.0, le=1.0)
+    chartable: bool = True
 
 
 class InferSemanticsRequest(BaseModel):

@@ -5,7 +5,8 @@ from app.services.metabaseClient import (
     create_dashboard,
     add_card_to_dashboard
 )
-from app.services.database import get_cached_dashboard_plan, get_dataset_metadata
+from app.services.database import get_cached_dashboard_plan, get_dataset_metadata, persist_metabase_dashboard_id
+
 from app.config import settings
 
 router = APIRouter()
@@ -32,6 +33,7 @@ async def create_metabase_dashboard(dataset_id: str):
 
     token = get_session_token()
     dashboard_id = create_dashboard(token, plan["dashboard_title"])
+    persist_metabase_dashboard_id(dataset_id, dashboard_id)  
 
     created_cards = []
     errors = []

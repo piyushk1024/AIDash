@@ -160,3 +160,26 @@ def fetch_field_map_for_table(session_token: str, table_name: str, timeout: int 
         time.sleep(2)
 
     raise TimeoutError(f"Metabase sync timed out after {timeout}s — table '{table_name}' not found")
+
+def get_dashboard_card_ids(session_token: str, dashboard_id: int) -> list[int]:
+    response = requests.get(
+        f"{METABASE_URL}/api/dashboard/{dashboard_id}",
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()
+    dashcards = response.json().get("dashcards", [])
+    return [dc["card_id"] for dc in dashcards]
+
+def delete_card(session_token: str, card_id: int) -> None:
+    response = requests.delete(
+        f"{METABASE_URL}/api/card/{card_id}",
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()
+
+def delete_dashboard(session_token: str, dashboard_id: int) -> None:
+    response = requests.delete(
+        f"{METABASE_URL}/api/dashboard/{dashboard_id}",
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()

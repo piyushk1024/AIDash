@@ -3,13 +3,17 @@ import psycopg2
 from pathlib import Path
 from app.services.database import get_connection
 
+NULL_VALUES = {"", "null", "none", "na", "n/a", "#n/a", "-", "?", "nan"}
+
 TYPE_MAP = {
-    "integer": "INTEGER",
+    "integer": "BIGINT",
     "float": "NUMERIC",
     "boolean": "BOOLEAN",
     "string": "TEXT",
     "unknown": "TEXT",
 }
+SUMMARY_KEYWORDS = {"total", "grand total", "subtotal", "sum", "overall", "aggregate"}
+
 
 def sanitise_table_name(filename: str) -> str:
     name = Path(filename).stem
@@ -19,25 +23,45 @@ def sanitise_table_name(filename: str) -> str:
         name = "t_" + name
     return name
 
+def clean_value(v: str) -> str:
+    return str(v).strip()
+
+def is_null(v: str) -> bool:
+    return clean_value(v).lower() in NULL_VALUES
+
+def is_blank_row(row: dict) -> bool:
+    return all(is_null(v) for v in row.values())
+
+def is_summary_row(row: dict) -> bool:
+    return any(clean_value(str(v)).lower() in SUMMARY_KEYWORDS for v in row.values())
+
+def parse_number(v: str) -> str:
+    """Strip commas and % signs to handle Indian-formatted numbers and percentages."""
+    return clean_value(v).replace(",", "").replace("%", "")
+
 def infer_type(values: list[str]) -> str:
-    non_empty = [v for v in values if v not in (None, "", "null", "None")]
+    non_empty = [v for v in values if not is_null(v)]
     if not non_empty:
         return "unknown"
+
     bool_set = {"true", "false", "0", "1"}
-    if all(str(v).strip().lower() in bool_set for v in non_empty):
+    if all(clean_value(v).lower() in bool_set for v in non_empty):
         return "boolean"
+
     try:
         for v in non_empty:
-            int(str(v))
+            int(parse_number(v))
         return "integer"
     except Exception:
         pass
+
     try:
         for v in non_empty:
-            float(str(v))
+            float(parse_number(v))
         return "float"
     except Exception:
         pass
+
     return "string"
 
 def load_csv_to_postgres(file_path: Path, table_name: str) -> dict:
@@ -48,6 +72,10 @@ def load_csv_to_postgres(file_path: Path, table_name: str) -> dict:
 
     if not rows:
         raise ValueError("CSV is empty")
+
+    # Skip blank trailing rows and summary rows
+    rows = [r for r in rows if any(not is_null(v) for v in r.values())]
+    rows = [r for r in rows if not is_blank_row(r) and not is_summary_row(r)]
 
     col_types = {}
     for col in columns:
@@ -67,7 +95,12 @@ def load_csv_to_postgres(file_path: Path, table_name: str) -> dict:
                 values = []
                 for col in columns:
                     val = row.get(col, "")
-                    values.append(None if val in ("", "null", "None", "NA") else val)
+                    if is_null(val):
+                        values.append(None)
+                    elif col_types[col] in ("integer", "float"):
+                        values.append(parse_number(val))
+                    else:
+                        values.append(clean_value(val))
 
                 placeholders = ", ".join(["%s"] * len(columns))
                 col_names = ", ".join(f'"{c}"' for c in columns)
