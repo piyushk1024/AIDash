@@ -7,3 +7,7 @@ __pycache__/
 __pycache__/
 *.py[cod]
 menotes.md
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
