@@ -115,3 +115,36 @@ def delete_dataset(dataset_id: str, table_name: str):
             cur.execute("DELETE FROM dataset_semantics WHERE dataset_id = %s", (dataset_id,))
             cur.execute("DELETE FROM dataset_metadata WHERE dataset_id = %s", (dataset_id,))
         conn.commit()
+
+def get_dataset_state(dataset_id: str):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # Metadata (upload result equivalent)
+            cur.execute(
+                "SELECT table_name, metabase_table_id, field_map, metabase_dashboard_id FROM dataset_metadata WHERE dataset_id = %s",
+                (dataset_id,)
+            )
+            metadata = cur.fetchone()
+
+            # Semantics
+            cur.execute(
+                "SELECT semantics_json FROM dataset_semantics WHERE dataset_id = %s",
+                (dataset_id,)
+            )
+            semantics_row = cur.fetchone()
+
+            # Latest dashboard plan
+            cur.execute(
+                "SELECT plan_json FROM dashboard_plans WHERE dataset_id = %s ORDER BY created_at DESC LIMIT 1",
+                (dataset_id,)
+            )
+            plan_row = cur.fetchone()
+
+    if not metadata:
+        return None
+
+    return {
+        "metadata": dict(metadata),
+        "semantics": semantics_row["semantics_json"] if semantics_row else None,
+        "plan": plan_row["plan_json"] if plan_row else None,
+    }
