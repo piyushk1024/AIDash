@@ -162,8 +162,10 @@ Production hardening, auth, and multi-tenancy are out of scope for this phase.
 
 - [x] CSV upload and profiling
 - [x] AI semantic inference with structured JSON output
-- [ ] Postgres persistence for inference results
-- [ ] Dashboard plan generation
-- [ ] Metabase chart auto-creation via API
-- [ ] User-facing chart modification and regeneration
+- [x] Postgres persistence for inference results
+- [x] Dashboard plan generation
+- [x] Metabase chart auto-creation via API
+- [x] User-facing chart modification and regeneration
+      React frontend implemented
+      Metabase visualisations embedded
 - [ ] Natural language insight generation
