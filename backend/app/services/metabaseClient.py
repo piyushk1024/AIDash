@@ -183,3 +183,12 @@ def delete_dashboard(session_token: str, dashboard_id: int) -> None:
         headers={"X-Metabase-Session": session_token}
     )
     response.raise_for_status()
+
+def create_public_link(session_token: str, dashboard_id: int) -> str:
+    response = requests.post(
+        f"{METABASE_URL}/api/dashboard/{dashboard_id}/public_link",
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()
+    uuid = response.json()["uuid"]
+    return f"{METABASE_URL}/public/dashboard/{uuid}"

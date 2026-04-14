@@ -56,4 +56,7 @@ export const api = {
   
   getDatasetState: (datasetId) =>
     request('GET', `/datasets/${datasetId}/state`),
+
+  deleteDataset: (datasetId) =>
+    request('DELETE', `/datasets/${datasetId}`),
 }

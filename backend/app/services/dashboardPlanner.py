@@ -4,6 +4,18 @@ from app.config import settings
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
+# PASS 1 — Questions:
+# Identify the 4 to 6 most interesting analytical questions this dataset can answer. Think about:
+# - What are the highest and lowest performing entities?
+# - Are there distributions that reveal imbalance or skew?
+# - Are there correlations between columns worth surfacing?
+# - Are there trends over time if date columns exist?
+# - Are there heterogeneous numeric columns that need to be broken out by a categorical?
+# - What would a domain expert want to know first?
+
+# PASS 2 — Charts:
+# For each question from Pass 1, plan one chart that answers it directly.
+
 def generate_dashboard_plan(dataset_id: str, semantics: dict, profile: dict) -> dict:
 
     prompt = f"""
@@ -17,17 +29,10 @@ Dataset profile (stats, value_counts, correlations, grouped_stats):
 
 ---
 
-PASS 1 — Questions:
-Identify the 4 to 6 most interesting analytical questions this dataset can answer. Think about:
-- What are the highest and lowest performing entities?
-- Are there distributions that reveal imbalance or skew?
-- Are there correlations between columns worth surfacing?
-- Are there trends over time if date columns exist?
-- Are there heterogeneous numeric columns that need to be broken out by a categorical?
-- What would a domain expert want to know first?
-
-PASS 2 — Charts:
-For each question from Pass 1, plan one chart that answers it directly.
+Before deciding on charts, consider what the most interesting analytical questions 
+are for this dataset — extremes, distributions, correlations, trends over time, 
+and domain-relevant KPIs. Then plan charts that answer those questions directly. 
+Capture your reasoning in the reasoning field of each chart.
 
 ---
 
@@ -72,11 +77,15 @@ Aim for 5 to 7 charts. Do not include markdown. Return raw JSON only.
     )
 
     raw = response.text.strip()
-    if raw.startswith("```"):
-        raw = raw.split("```")[1]
-        if raw.startswith("json"):
-            raw = raw[4:]
-        raw = raw.strip()
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+    
+    # raw = response.text.strip()
+    # print("=== GEMINI RAW RESPONSE ===")
+    # print(repr(raw))
+    # print("=== END ===")
 
     parsed = json.loads(raw)
     parsed["dataset_id"] = dataset_id

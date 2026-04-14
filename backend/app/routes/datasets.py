@@ -36,6 +36,7 @@ def get_state(dataset_id: str):
         dashboard_result = {
             "dashboard_id": dashboard_id,
             "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",
+            "public_url": metadata.get("public_url"),
             "cards_created": len(plan.get("charts", [])) if plan else 0,
             "cards": [
                 {"card_id": None, "chart_title": c["chart_title"]}

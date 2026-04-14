@@ -10,4 +10,6 @@ menotes.md
 # Frontend
 frontend/node_modules/
 frontend/dist/
+backend/app/uploads
+dataset/
 

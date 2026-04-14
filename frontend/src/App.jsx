@@ -52,6 +52,11 @@ export default function App() {
     setPhase('wizard')
   }
 
+  async function handleDeleteDataset(datasetId) {
+  await api.deleteDataset(datasetId)
+  setDatasets(prev => prev.filter(d => d.dataset_id !== datasetId))
+}
+
   // ── Picker screen ───────────────────────────────────────────
   if (phase === 'pick') {
     return (
@@ -82,17 +87,25 @@ export default function App() {
             ) : (
               <div className="flex flex-col gap-2">
                 {datasets.map(ds => (
-                  <button
-                    key={ds.dataset_id}
-                    onClick={() => handlePickDataset(ds.dataset_id)}
-                    className="text-left px-4 py-3 border border-neutral-200 dark:border-neutral-800 
-                               hover:border-amber-400 dark:hover:border-amber-400
-                               font-mono text-sm transition-colors"
-                  >
-                    {ds.original_filename}
-                    <span className="ml-3 text-xs text-neutral-400">{ds.dataset_id.slice(0, 8)}</span>
-                  </button>
+                  <div key={ds.dataset_id} className="flex items-center gap-2">
+                    <button
+                      onClick={() => handlePickDataset(ds.dataset_id)}
+                      className="flex-1 text-left px-4 py-3 border border-neutral-200 dark:border-neutral-800 
+                                hover:border-amber-400 dark:hover:border-amber-400
+                                font-mono text-sm transition-colors"
+                    >
+                      {ds.original_filename}
+                      <span className="ml-3 text-xs text-neutral-400">{ds.dataset_id.slice(0, 8)}</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteDataset(ds.dataset_id)}
+                      className="px-3 py-3 font-mono text-xs text-neutral-500 hover:text-red-400 transition-colors"
+                    >
+                      [ x ]
+                    </button>
+                  </div>
                 ))}
+
 
                 <button
                   onClick={handleStartFresh}
