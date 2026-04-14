@@ -3,9 +3,15 @@ from app.services.metabaseClient import (
     get_session_token,
     create_card,
     create_dashboard,
-    add_card_to_dashboard
+    add_card_to_dashboard,
+    delete_dashboard,
+    delete_card,
+    get_dashboard_card_ids,
+    create_public_link    
 )
+
 from app.services.database import get_cached_dashboard_plan, get_dataset_metadata, persist_metabase_dashboard_id
+
 
 from app.config import settings
 
@@ -32,8 +38,22 @@ async def create_metabase_dashboard(dataset_id: str):
     field_map = metadata["field_map"]
 
     token = get_session_token()
+    existing_dashboard_id = metadata.get("metabase_dashboard_id")
+    print(f"=== existing_dashboard_id: {existing_dashboard_id} ===")
+    if existing_dashboard_id:
+        try:
+            card_ids = get_dashboard_card_ids(token, existing_dashboard_id)
+            delete_dashboard(token, existing_dashboard_id)
+            for card_id in card_ids:
+                delete_card(token, card_id)
+        except Exception:
+            pass  # If already gone in Metabase, continue anyway
     dashboard_id = create_dashboard(token, plan["dashboard_title"])
-    persist_metabase_dashboard_id(dataset_id, dashboard_id)  
+    public_url = create_public_link(token, dashboard_id)
+    persist_metabase_dashboard_id(dataset_id, dashboard_id, public_url)  
+    # dashboard_id = create_dashboard(token, plan["dashboard_title"])
+    
+    
 
     created_cards = []
     errors = []
@@ -54,7 +74,8 @@ async def create_metabase_dashboard(dataset_id: str):
 
     return {
         "dashboard_id": dashboard_id,
-        "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",
+        "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",   
+        "public_url": public_url,
         "cards_created": len(created_cards),
         "cards": created_cards,
         "errors": errors

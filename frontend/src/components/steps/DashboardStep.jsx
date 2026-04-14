@@ -5,13 +5,11 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
   const isDone    = status.dashboard === 'done'
 
   // ── Done — collapsed summary with expand toggle ──
-  if (isDone && dashboardResult) {
-    return (
-      <div className="animate-fade-in mt-6">
-        <button
-          onClick={onToggle}
-          className="w-full py-2 flex items-center gap-3 font-mono text-xs hover:opacity-80 transition-opacity text-left"
-        >
+ if (isDone && dashboardResult) {
+  return (
+    <div className="animate-fade-in mt-6">
+      <div className="w-full py-2 flex items-center gap-3 font-mono text-xs text-left">
+        <button onClick={onToggle} className="flex items-center gap-3 flex-1 hover:opacity-80 transition-opacity">
           <span className="text-neutral-500 uppercase tracking-wider">Build Dashboard</span>
           <span className="text-neutral-600">—</span>
           <span className="text-neutral-400">{dashboardResult.cards_created} cards created</span>
@@ -20,6 +18,14 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
             ▾
           </span>
         </button>
+        <button
+          onClick={createDashboard}
+          disabled={isLoading}
+          className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors"
+        >
+          {isLoading ? '...' : '[ rebuild ]'}
+        </button>
+      </div>
 
         {isExpanded && (
           <div className="animate-fade-in mb-4 space-y-4">
@@ -64,12 +70,12 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
               <div className="font-mono text-xs text-neutral-500 uppercase tracking-wider mb-2">
                 Preview
               </div>
-              <iframe
-                src={dashboardResult.dashboard_url}
-                title="Metabase Dashboard"
-                className="w-full rounded border border-neutral-800"
-                style={{ height: '520px' }}
-              />
+                <iframe
+                  src={dashboardResult.public_url}
+                  title="Metabase Dashboard"
+                  className="w-full rounded border border-neutral-800"
+                  style={{ height: '520px' }}
+                />
             </div>
           </div>
         )}
@@ -144,6 +150,7 @@ function StepHeader({ title, done }) {
         {title}
       </h2>
       {done && <span className="font-mono text-xs text-amber-400">✓ done</span>}
+
     </div>
   )
 }

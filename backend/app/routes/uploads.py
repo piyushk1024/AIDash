@@ -4,7 +4,7 @@ from app.config import settings
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table
-from app.services.database import persist_dataset_metadata
+from app.services.database import persist_dataset_metadata, get_dataset_metadata  
 
 router = APIRouter()
 
@@ -66,15 +66,16 @@ async def list_datasets():
 
     for file_path in UPLOAD_DIR.glob("*.csv"):
         name = file_path.name
-
         if "_" not in name:
             continue
-
         dataset_id, original_filename = name.split("_", 1)
-
         try:
             UUID(dataset_id)
         except ValueError:
+            continue
+
+        # Only include datasets that have a metadata record
+        if not get_dataset_metadata(dataset_id):
             continue
 
         datasets.append({
