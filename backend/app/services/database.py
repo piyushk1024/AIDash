@@ -75,7 +75,7 @@ def get_dataset_metadata(dataset_id: str):
     with get_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(                
-                "SELECT table_name, metabase_table_id, field_map, metabase_dashboard_id FROM dataset_metadata WHERE dataset_id = %s",
+                "SELECT table_name, metabase_table_id, field_map, metabase_dashboard_id,public_url FROM dataset_metadata WHERE dataset_id = %s",
                 (dataset_id,)
             )
             row = cur.fetchone()
@@ -90,7 +90,7 @@ def persist_metabase_dashboard_id(dataset_id: str, dashboard_id: int,public_url:
                 SET metabase_dashboard_id = %s, public_url = %s
                 WHERE dataset_id = %s
                 """,
-                (dashboard_id, dataset_id, public_url)
+                (dashboard_id, public_url, dataset_id)
             )
         conn.commit()
 
@@ -121,7 +121,7 @@ def get_dataset_state(dataset_id: str):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             # Metadata (upload result equivalent)
             cur.execute(
-                "SELECT table_name, metabase_table_id, field_map, metabase_dashboard_id FROM dataset_metadata WHERE dataset_id = %s",
+                "SELECT table_name, metabase_table_id, field_map, metabase_dashboard_id,public_url FROM dataset_metadata WHERE dataset_id = %s",
                 (dataset_id,)
             )
             metadata = cur.fetchone()
