@@ -3,29 +3,18 @@ from app.config import settings
 import time
 
 METABASE_URL = settings.METABASE_URL
-DATABASE_ID = 2
-TABLE_ID = 11
 
-
-FIELD_MAP = {
-    "date": {"id": 93, "base_type": "type/Date"},
-    "week_of_year": {"id": 94, "base_type": "type/Integer"},
-    "day_of_week": {"id": 95, "base_type": "type/Text"},
-    "is_weekend": {"id": 96, "base_type": "type/Boolean"},
-    "holiday_flag": {"id": 97, "base_type": "type/Boolean"},
-    "weather_tag": {"id": 98, "base_type": "type/Text"},
-    "city": {"id": 99, "base_type": "type/Text"},
-    "zone": {"id": 100, "base_type": "type/Text"},
-    "mall_name": {"id": 101, "base_type": "type/Text"},
-    "promo_event_flag": {"id": 102, "base_type": "type/Boolean"},
-    "footfall": {"id": 103, "base_type": "type/Integer"},
-    "occupancy_rate_pct": {"id": 104, "base_type": "type/Decimal"},
-    "avg_dwell_mins": {"id": 105, "base_type": "type/Decimal"},
-    "sales_amount_inr": {"id": 106, "base_type": "type/Decimal"},
-    "parking_utilization_pct": {"id": 107, "base_type": "type/Decimal"},
-    "maintenance_tickets": {"id": 108, "base_type": "type/Integer"},
-    "energy_kwh": {"id": 109, "base_type": "type/Decimal"},
-}
+def get_database_id(session_token: str) -> int:
+    response = requests.get(
+        f"{METABASE_URL}/api/database",
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()
+    databases = response.json().get("data", [])
+    match = next((db for db in databases if db["name"] == settings.METABASE_DB_NAME), None)
+    if not match:
+        raise ValueError(f"Database '{settings.METABASE_DB_NAME}' not found in Metabase")
+    return match["id"]
 
 def get_session_token() -> str:
     response = requests.post(
@@ -39,7 +28,7 @@ def get_session_token() -> str:
     return response.json()["id"]
 
 
-def create_card(session_token: str, chart: dict, table_id: int, field_map: dict) -> dict:
+def create_card(session_token: str, chart: dict, table_id: int, field_map: dict, database_id:int,) -> dict:
     
     x_col = chart.get("x_axis")
     y_col = chart.get("y_axis")
@@ -66,8 +55,21 @@ def create_card(session_token: str, chart: dict, table_id: int, field_map: dict)
         x_field = field_map[x_col]
         query_clause["breakout"] = [["field", x_field["id"], {"base-type": x_field["base_type"]}]]
 
+    if chart.get("filters"):
+        filter_col = chart["filters"][0]["column"]
+        filter_val = chart["filters"][0]["value"]
+        if filter_col not in field_map:
+            raise ValueError(f"filter column '{filter_col}' not found in field_map")
+        f_field = field_map[filter_col]
+        query_clause["filter"] = [
+            "=",
+            ["field", f_field["id"], {"base-type": f_field["base_type"]}],
+            filter_val
+        ]
+        
+
     query = {
-        "database": DATABASE_ID,
+        "database": database_id,
         "type": "query",
         "query": query_clause
     }
@@ -126,18 +128,18 @@ def add_card_to_dashboard(
     )
     response.raise_for_status()
 
-def trigger_metabase_sync(session_token: str) -> None:
+def trigger_metabase_sync(session_token: str, database_id: int) -> None:
     response = requests.post(
-        f"{METABASE_URL}/api/database/{DATABASE_ID}/sync_schema",
+        f"{METABASE_URL}/api/database/{database_id}/sync_schema",
         headers={"X-Metabase-Session": session_token}
     )
     response.raise_for_status()
 
-def fetch_field_map_for_table(session_token: str, table_name: str, timeout: int = 30) -> dict:
+def fetch_field_map_for_table(session_token: str, table_name: str,database_id: int, timeout: int = 30) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
         response = requests.get(
-            f"{METABASE_URL}/api/database/{DATABASE_ID}/metadata",
+            f"{METABASE_URL}/api/database/{database_id}/metadata",
             headers={"X-Metabase-Session": session_token}
         )
         response.raise_for_status()

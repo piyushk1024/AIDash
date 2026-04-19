@@ -22,6 +22,7 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     - Use grouped_stats to detect numeric columns that behave differently depending on another column's value (e.g. a margin column that means different things depending on a result type column). Flag these in your notes.
     - Use stats (mean, std, min, max) to understand numeric scale and detect outliers or summary rows
     - If a numeric column appears heterogeneous, reflect that in its semantic_role and add a note explaining the grouping
+    - For any measure column identified as heterogeneous, set heterogeneous: true and set filter_column to the categorical column that controls its unit or meaning
 
     Return ONLY a JSON object with exactly these fields:
     - dataset_id: string
@@ -34,6 +35,7 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     - identifiers: list of {{column, semantic_role, confidence, chartable}}
     - unknown: list of {{column, semantic_role, confidence, chartable}}
     - notes: list of strings
+    - measures: list of {{column, semantic_role, confidence, chartable, heterogeneous, filter_column}}
 
     Rules for chartable:
     - Set chartable: false for serial numbers, row IDs, and any column that is purely an identifier with no analytical value

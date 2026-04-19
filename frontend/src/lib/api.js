@@ -31,11 +31,23 @@ async function request(method, path, body, isFormData = false) {
 
 // One function per endpoint — mirrors your FastAPI routes exactly
 export const api = {
-  uploadCsv: (file) => {
-    const form = new FormData()
-    form.append('file', file)           // 'file' must match FastAPI's parameter name
-    return request('POST', '/upload-csv', form, true)
-  },
+  uploadCsv: async (file, replace = false, forceNew = false) => {
+  const form = new FormData()
+  form.append('file', file)
+  // const url = replace ? '/upload-csv?replace=true' : '/upload-csv'
+  const params = replace ? '?replace=true' : forceNew ? '?force_new=true' : ''
+  // const res = await fetch(`${BASE}${url}`, { method: 'POST', body: form })
+  const res = await fetch(`${BASE}/upload-csv${params}`, { method: 'POST', body: form })
+  if (res.status === 409) {
+    const err = await res.json()
+    return { conflict: true, existing_dataset_id: err.detail.existing_dataset_id }
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Request failed')
+  }
+  return res.json()
+},
 
   inferSemantics: (datasetId, businessHint) =>
     request('POST', `/infer-dataset-semantics/${datasetId}`, {

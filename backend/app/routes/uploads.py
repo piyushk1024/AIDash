@@ -3,8 +3,12 @@ from uuid import uuid4, UUID
 from app.config import settings
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
-from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table
-from app.services.database import persist_dataset_metadata, get_dataset_metadata  
+from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table, get_database_id
+from app.services.database import persist_dataset_metadata, get_dataset_metadata, delete_dataset
+from app.services.metabaseClient import (
+    get_session_token, trigger_metabase_sync, fetch_field_map_for_table,
+    get_database_id, delete_dashboard, delete_card, get_dashboard_card_ids
+)
 
 router = APIRouter()
 
@@ -13,12 +17,41 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload-csv")
-async def upload_csv(file: UploadFile = File(...)):
+async def upload_csv(file: UploadFile = File(...), replace:bool = False, force_new:bool = False):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing Filename")
 
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
+    
+    # Duplicate detection
+    existing = next(
+        (f for f in UPLOAD_DIR.glob("*.csv") if f.name.split("_", 1)[-1] == file.filename),
+        None
+    )
+    if existing and not replace and not force_new:
+        existing_dataset_id = existing.name.split("_", 1)[0]
+        raise HTTPException(
+            status_code=409,
+            detail={"conflict": True, "existing_dataset_id": existing_dataset_id}
+        )
+
+    if existing and replace:
+        existing_dataset_id = existing.name.split("_", 1)[0]
+        metadata = get_dataset_metadata(existing_dataset_id)
+        if metadata:
+            dashboard_id = metadata.get("metabase_dashboard_id")
+            if dashboard_id:
+                try:
+                    token = get_session_token()
+                    card_ids = get_dashboard_card_ids(token, dashboard_id)
+                    delete_dashboard(token, dashboard_id)
+                    for card_id in card_ids:
+                        delete_card(token, card_id)
+                except Exception:
+                    pass
+            delete_dataset(existing_dataset_id, metadata["table_name"])
+        existing.unlink(missing_ok=True)
 
     dataset_id = str(uuid4())
     safe_name = f"{dataset_id}_{Path(file.filename).name}"
@@ -36,8 +69,9 @@ async def upload_csv(file: UploadFile = File(...)):
 
     try:
         token = get_session_token()
-        trigger_metabase_sync(token)
-        metabase_result = fetch_field_map_for_table(token, table_name)
+        database_id = get_database_id(token)
+        trigger_metabase_sync(token,database_id)
+        metabase_result = fetch_field_map_for_table(token, table_name,database_id)
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e))
     except Exception as e:
