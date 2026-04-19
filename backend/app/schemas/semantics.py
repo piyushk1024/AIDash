@@ -8,6 +8,8 @@ class SemanticColumn(BaseModel):
     semantic_role: str
     confidence: float = Field(ge=0.0, le=1.0)
     chartable: bool = True
+    heterogeneous: bool = False
+    filter_column: Optional[str] = None
 
 
 class InferSemanticsRequest(BaseModel):

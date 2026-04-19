@@ -21,6 +21,7 @@ export function useDasher() {
   const [semantics, setSemantics] = useState(null)
   const [plan, setPlan] = useState(null)
   const [dashboardResult, setDashboardResult] = useState(null)
+  const [conflict, setConflict] = useState(null) // { existing_dataset_id }
 
   // Per-step status and error messages
   const [status, setStatus] = useState(initialStatus)
@@ -35,20 +36,38 @@ export function useDasher() {
     setErrors(prev => ({ ...prev, [step]: message }))
 
   // ── Step 1: Upload ──────────────────────────────────────────
-  async function upload(file, businessHint) {
-    setStepStatus('upload', 'loading')
-    setStepError('upload', null)
-    try {
-      const result = await api.uploadCsv(file)
-      setUploadResult(result)
-      setDatasetId(result.dataset_id)
-      setStepStatus('upload', 'done')
-    } catch (e) {
-      setStepStatus('upload', 'error')
-      setStepError('upload', e.message)
-    }
-  }
 
+async function upload(file, businessHint, replace = false, forceNew = false) {
+  setStepStatus('upload', 'loading')
+  setStepError('upload', null)
+  try {
+    const result = await api.uploadCsv(file, replace, forceNew)
+    if (result.conflict) {
+      setConflict({ file, businessHint, existing_dataset_id: result.existing_dataset_id })
+      setStepStatus('upload', 'idle')
+      return
+    }
+    setConflict(null)
+    setUploadResult(result)
+    setDatasetId(result.dataset_id)
+    setStepStatus('upload', 'done')
+  } catch (e) {
+    setStepStatus('upload', 'error')
+    setStepError('upload', e.message)
+  }
+ }
+
+  async function resolveConflict(choice) {
+    
+  if (!conflict) return
+    setConflict(null)
+  if (choice === 'replace') {
+    await upload(conflict.file, conflict.businessHint, true, false)
+  } else {
+    await upload(conflict.file, conflict.businessHint, false, true)
+  }
+}
+ 
   // ── Step 2: Semantics ───────────────────────────────────────
   async function inferSemantics(businessHint) {
     if (!datasetId) return
@@ -126,6 +145,7 @@ export function useDasher() {
     semantics,
     plan,
     dashboardResult,
+    conflict,
     // Status per step
     status,
     errors,
@@ -134,6 +154,7 @@ export function useDasher() {
     inferSemantics,
     generatePlan,
     createDashboard,
-    rehydrate
+    rehydrate,
+    resolveConflict    
   }
 }

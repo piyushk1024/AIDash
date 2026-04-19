@@ -47,6 +47,8 @@ HARD CONSTRAINTS — these are non-negotiable:
 - sum and avg aggregations require a non-null y_axis
 - count aggregation must have y_axis null
 - Only use column names that exist exactly as written in the semantics
+- For measures where heterogeneous is true, you MUST populate filters with [{{"column": filter_column, "value": one_meaningful_value}}] — never aggregate a heterogeneous measure without a filter
+- For heterogeneous measures, generate one chart per meaningful filter value (use value_counts from the profile to find them)
 
 METABASE CAPABILITIES — only these are supported:
 - aggregations: count, sum, avg
@@ -58,6 +60,7 @@ METABASE CAPABILITIES — only these are supported:
 Return ONLY a JSON object with exactly these fields:
 - dataset_id: string
 - dashboard_title: string
+- filters: list of {{"column": column_name, "value": filter_value}} — empty list for non-heterogeneous measures, one entry for heterogeneous ones
 - charts: list of objects, each with:
     - chart_id: short unique slug
     - chart_title: string

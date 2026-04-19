@@ -7,7 +7,8 @@ from app.services.metabaseClient import (
     delete_dashboard,
     delete_card,
     get_dashboard_card_ids,
-    create_public_link    
+    create_public_link,
+    get_database_id
 )
 
 from app.services.database import get_cached_dashboard_plan, get_dataset_metadata, persist_metabase_dashboard_id
@@ -38,6 +39,7 @@ async def create_metabase_dashboard(dataset_id: str):
     field_map = metadata["field_map"]
 
     token = get_session_token()
+    database_id = get_database_id(token)
     existing_dashboard_id = metadata.get("metabase_dashboard_id")
     print(f"=== existing_dashboard_id: {existing_dashboard_id} ===")
     if existing_dashboard_id:
@@ -60,7 +62,7 @@ async def create_metabase_dashboard(dataset_id: str):
 
     for i, chart in enumerate(plan["charts"]):
         try:
-            card = create_card(token, chart, table_id, field_map)
+            card = create_card(token, chart, table_id, field_map,database_id)
             add_card_to_dashboard(token, dashboard_id, card["id"], i)
             created_cards.append({
                 "chart_title": chart["chart_title"],

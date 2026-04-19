@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     METABASE_URL: str
     METABASE_USERNAME: str
     METABASE_PASSWORD: str
+    METABASE_DB_NAME: str 
 
 settings = Settings()
 

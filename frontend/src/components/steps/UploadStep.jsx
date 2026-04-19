@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 
 export default function UploadStep({ dasher, isActive, isExpanded, onToggle }) {
-  const { upload, status, errors, uploadResult } = dasher
+  const { upload, status, errors, uploadResult, conflict, resolveConflict  } = dasher
 
   const [file, setFile] = useState(null)
   const [hint, setHint] = useState('')
@@ -97,6 +97,28 @@ export default function UploadStep({ dasher, isActive, isExpanded, onToggle }) {
             </div>
           )}
         </div>
+        {/* Conflict resolution */}
+{conflict && (
+  <div className="mt-4 p-4 border border-amber-400/40 rounded font-mono text-xs space-y-3">
+    <div className="text-amber-400">
+      A dataset with this filename already exists.
+    </div>
+    <div className="flex gap-3">
+      <button
+        onClick={() => resolveConflict('replace')}
+        className="px-4 py-2 bg-amber-400 text-neutral-950 rounded tracking-widest uppercase hover:bg-amber-300 transition-colors"
+      >
+        Replace
+      </button>
+      <button
+        onClick={() => resolveConflict('new')}
+        className="px-4 py-2 border border-neutral-600 text-neutral-400 rounded tracking-widest uppercase hover:border-neutral-400 transition-colors"
+      >
+        Create New
+      </button>
+    </div>
+  </div>
+)}
 
         {errors.upload && (
           <div className="mt-3 font-mono text-xs text-red-400">✕ {errors.upload}</div>
