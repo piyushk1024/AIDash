@@ -15,6 +15,7 @@ Create and activate a virtual environment
 Run pip install -r requirements.txt
 Recreate .env from .env.example with your real values — make sure METABASE_DB_NAME exactly matches the database name you will set in Metabase (step 9)
 Start PostgreSQL service
+Install node packages: npm install
 Create the database in pgAdmin or psql: CREATE DATABASE MallOpsDB;
 Run all three migrations in order:
 

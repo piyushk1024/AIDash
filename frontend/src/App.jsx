@@ -58,6 +58,7 @@ export default function App() {
   }
 
   function handleStartFresh() {
+    dasher.reset()
     setPhase('wizard')
   }
 
