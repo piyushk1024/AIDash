@@ -4,7 +4,7 @@ export default function UploadStep({ dasher, isActive, isExpanded, onToggle }) {
   const { upload, status, errors, uploadResult, conflict, resolveConflict  } = dasher
 
   const [file, setFile] = useState(null)
-  const [hint, setHint] = useState('')
+  // const [hint, setHint] = useState('')
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef(null)
 
@@ -55,7 +55,7 @@ export default function UploadStep({ dasher, isActive, isExpanded, onToggle }) {
 
   function handleSubmit() {
     if (!file) return
-    upload(file, hint || null)
+    upload(file) //, hint || null)
   }
 
   return (
@@ -63,20 +63,11 @@ export default function UploadStep({ dasher, isActive, isExpanded, onToggle }) {
       <div className="rounded-lg border border-amber-400/30 bg-amber-400/[0.02] dark:bg-amber-400/[0.03] px-6 py-5">
         <StepHeader title="Upload Dataset" />
         <p className="font-mono text-xs text-neutral-500 mt-1 mb-5">
-          Upload a CSV to get started. Add a business hint to improve LLM inference.
+          {/* Upload a CSV to get started. Add a business hint to improve LLM inference. */}
         </p>
 
         <div className="mb-4">
-          <label className="font-mono text-xs text-neutral-500 dark:text-neutral-400 tracking-wider uppercase block mb-2">
-            Business context <span className="text-neutral-400 normal-case">(optional)</span>
-          </label>
-          <input
-            type="text"
-            value={hint}
-            onChange={e => setHint(e.target.value)}
-            placeholder="e.g. retail mall operations, daily footfall tracking"
-            className="w-full bg-transparent border border-neutral-300 dark:border-neutral-700 rounded px-3 py-2 font-mono text-sm text-neutral-900 dark:text-neutral-100 placeholder:text-neutral-400 focus:outline-none focus:border-amber-400 transition-colors"
-          />
+
         </div>
 
         <div
