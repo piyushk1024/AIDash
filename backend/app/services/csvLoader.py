@@ -69,6 +69,7 @@ def load_csv_to_postgres(file_path: Path, table_name: str) -> dict:
         reader = csv.DictReader(f)
         rows = list(reader)
         columns = reader.fieldnames or []
+        columns = [col if col.strip() else f"col_{i}" for i, col in enumerate(columns)]
 
     if not rows:
         raise ValueError("CSV is empty")
