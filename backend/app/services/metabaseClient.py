@@ -194,3 +194,20 @@ def create_public_link(session_token: str, dashboard_id: int) -> str:
     response.raise_for_status()
     uuid = response.json()["uuid"]
     return f"{METABASE_URL}/public/dashboard/{uuid}"
+
+def execute_mbql_query(session_token: str, mbql: dict) -> dict:
+    response = requests.post(
+        f"{METABASE_URL}/api/dataset",
+        json=mbql,
+        headers={"X-Metabase-Session": session_token}
+    )
+    response.raise_for_status()
+    data = response.json()
+
+    # Return rows + column names in a clean structure
+    cols = [col["name"] for col in data.get("data", {}).get("cols", [])]
+    rows = data.get("data", {}).get("rows", [])
+    return {
+        "columns": cols,
+        "rows": [dict(zip(cols, row)) for row in rows]
+    }

@@ -41,7 +41,7 @@ async def create_metabase_dashboard(dataset_id: str):
     token = get_session_token()
     database_id = get_database_id(token)
     existing_dashboard_id = metadata.get("metabase_dashboard_id")
-    print(f"=== existing_dashboard_id: {existing_dashboard_id} ===")
+    # print(f"=== existing_dashboard_id: {existing_dashboard_id} ===")
     if existing_dashboard_id:
         try:
             card_ids = get_dashboard_card_ids(token, existing_dashboard_id)
