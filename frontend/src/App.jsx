@@ -194,7 +194,7 @@ export default function App() {
           </main>
         </div>
 
-        {dashboardDone && (
+        {/* {dashboardDone && (
           <div ref={dashboardRef} className="animate-fade-in border-t border-neutral-200 dark:border-neutral-800 mt-4">
             <div className="max-w-5xl mx-auto px-8 py-8">
               <div className="flex items-center justify-between mb-4">
@@ -233,7 +233,7 @@ export default function App() {
               )}
             </div>
           </div>
-        )}
+        )} */}
 
       </div>
     </div>

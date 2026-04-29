@@ -71,4 +71,14 @@ export const api = {
 
   deleteDataset: (datasetId) =>
     request('DELETE', `/datasets/${datasetId}`),
+  
+askInsight: (datasetId, prompt) =>
+  request('POST', `/datasets/${datasetId}/insights`, { prompt }),
+
+getInsights: (datasetId) =>
+  request('GET', `/datasets/${datasetId}/insights`),
+
+deleteInsight: (datasetId, insightId) =>
+  request('DELETE', `/datasets/${datasetId}/insights/${insightId}`),
 }
+

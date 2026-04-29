@@ -45,7 +45,7 @@ export function useDasher() {
       if (result.conflict) {
         setConflict({
           file,
-          businessHint,
+          // businessHint,
           existing_dataset_id: result.existing_dataset_id,
         });
         setStepStatus("upload", "idle");
