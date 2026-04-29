@@ -114,6 +114,7 @@ def delete_dataset(dataset_id: str, table_name: str):
             cur.execute("DELETE FROM dashboard_plans WHERE dataset_id = %s", (dataset_id,))
             cur.execute("DELETE FROM dataset_semantics WHERE dataset_id = %s", (dataset_id,))
             cur.execute("DELETE FROM dataset_metadata WHERE dataset_id = %s", (dataset_id,))
+            cur.execute("DELETE FROM dataset_insights WHERE dataset_id = %s", (dataset_id,))
         conn.commit()
 
 def get_dataset_state(dataset_id: str):
@@ -148,3 +149,49 @@ def get_dataset_state(dataset_id: str):
         "semantics": semantics_row["semantics_json"] if semantics_row else None,
         "plan": plan_row["plan_json"] if plan_row else None,
     }
+
+def persist_insight(dataset_id: str, prompt: str, insights: list):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO dataset_insights (dataset_id, prompt, insights_json)
+                VALUES (%s, %s, %s)
+                RETURNING insight_id
+                """,
+                (dataset_id, prompt, json.dumps(insights))
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return str(row[0])
+
+def get_insights_for_dataset(dataset_id: str) -> list:
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT insight_id, prompt, insights_json, created_at
+                FROM dataset_insights
+                WHERE dataset_id = %s
+                ORDER BY created_at DESC
+                """,
+                (dataset_id,)
+            )
+            rows = cur.fetchall()
+    return [
+        {
+            "insight_id": str(row["insight_id"]),
+            "prompt": row["prompt"],
+            "insights": row["insights_json"],
+            "created_at": row["created_at"].isoformat(),
+        }
+        for row in rows
+    ]
+def delete_insight(dataset_id: str, insight_id: str):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM dataset_insights WHERE insight_id = %s AND dataset_id = %s",
+                (insight_id, dataset_id)
+            )
+        conn.commit()

@@ -5,68 +5,98 @@ from app.config import settings
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
-def _build_field_reference(field_map: dict) -> str:
+def _build_field_reference(field_map: dict, semantics: dict) -> str:
+    # Build a lookup of column -> semantic_role from semantics
+    role_map = {}
+    for category in ("date_columns", "dimensions", "measures", "flags", "identifiers", "unknown"):
+        for col in semantics.get(category, []):
+            role_map[col["column"]] = col["semantic_role"]
+
     lines = []
     for col, meta in field_map.items():
-        lines.append(f"  - {col} (base_type: {meta['base_type']})")
+        role = role_map.get(col, "unknown")
+        lines.append(f"  - {col} (base_type: {meta['base_type']}, semantic_role: {role})")
     return "\n".join(lines)
 
 
 def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: dict) -> dict:
-    """Convert Gemini's simple query intent into valid MBQL using field_map lookups."""
 
     query_clause = {"source-table": table_id}
 
     # SELECT fields
     if intent.get("select"):
-        query_clause["fields"] = [
+        fields = [
             ["field", field_map[col]["id"], {"base-type": field_map[col]["base_type"]}]
             for col in intent["select"]
             if col in field_map
         ]
+        if fields:
+            query_clause["fields"] = fields
+        # if all selected columns missing from field_map, omit fields entirely
 
     # AGGREGATION (count, sum, avg)
     if intent.get("aggregation"):
         agg = intent["aggregation"]
-        agg_type = agg["type"]
+        if isinstance(agg, list):
+            agg = agg[0]
+        agg_type = agg.get("type")
         if agg_type == "count":
             query_clause["aggregation"] = [["count"]]
         elif agg_type in ("sum", "avg"):
-            col = agg["column"]
-            f = field_map[col]
-            query_clause["aggregation"] = [[agg_type, ["field", f["id"], {"base-type": f["base_type"]}]]]
+            col = agg.get("column")
+            if col and col in field_map:
+                f = field_map[col]
+                query_clause["aggregation"] = [[agg_type, ["field", f["id"], {"base-type": f["base_type"]}]]]
+            else:
+                raise ValueError(f"aggregation column '{col}' not found in field_map")
 
     # BREAKOUT (group by)
     if intent.get("breakout"):
         col = intent["breakout"]
-        f = field_map[col]
-        query_clause["breakout"] = [["field", f["id"], {"base-type": f["base_type"]}]]
+        if isinstance(col, list):
+            col = col[0]
+        if col in field_map:
+            f = field_map[col]
+            query_clause["breakout"] = [["field", f["id"], {"base-type": f["base_type"]}]]
+        # if column missing, skip breakout silently
 
     # FILTER
     if intent.get("filter"):
         fil = intent["filter"]
-        col = fil["column"]
-        f = field_map[col]
-        field_ref = ["field", f["id"], {"base-type": f["base_type"]}]
-        op = fil["operator"]
-        if op == "not-null":
-            query_clause["filter"] = ["not-null", field_ref]
-        elif op == "=":
-            query_clause["filter"] = ["=", field_ref, fil["value"]]
-        elif op == "!=":
-            query_clause["filter"] = ["!=", field_ref, fil["value"]]
+        if isinstance(fil, list):
+            fil = fil[0]
+        col = fil.get("column")
+        if col and col in field_map:
+            f = field_map[col]
+            field_ref = ["field", f["id"], {"base-type": f["base_type"]}]
+            op = fil.get("operator")
+            if op == "not-null":
+                query_clause["filter"] = ["not-null", field_ref]
+            elif op in ("=", "!=", ">", "<", ">=", "<="):
+                value = fil["value"]
+                if f["base_type"] == "type/Boolean" and op in ("=", "!="):
+                    value = bool(value)
+                query_clause["filter"] = [op, field_ref, "value"]
 
     # ORDER BY
     if intent.get("order_by"):
         ob = intent["order_by"]
-        col = ob["column"]
-        f = field_map[col]
+        if isinstance(ob, list):
+            ob = ob[0]
         direction = ob.get("direction", "desc")
-        query_clause["order-by"] = [[direction, ["field", f["id"], {"base-type": f["base_type"]}]]]
+        if "aggregation" in query_clause:
+            query_clause["order-by"] = [[direction, ["aggregation", 0]]]
+        else:
+            col = ob.get("column")
+            if col and col in field_map:
+                f = field_map[col]
+                query_clause["order-by"] = [[direction, ["field", f["id"], {"base-type": f["base_type"]}]]]
 
     # LIMIT
     if intent.get("limit"):
-        query_clause["limit"] = intent["limit"]
+        limit = intent["limit"]
+        if isinstance(limit, int) and limit > 0:
+            query_clause["limit"] = limit
 
     return {
         "database": database_id,
@@ -111,7 +141,7 @@ Return:
   "mode": "query",
   "intent": {{
     "select": ["col1", "col2"],
-    "filter": {{"column": "col_name", "operator": "not-null"}},
+    "filter": {{"column": "col_name", "operator": "not-null|=|!=|>|<|>=|<=", "value": "filter_value"}},
     "order_by": {{"column": "col_name", "direction": "desc"}},
     "limit": 5
   }}
@@ -121,14 +151,19 @@ For aggregation queries use:
 {{
   "mode": "query",
   "intent": {{
-    "aggregation": {{"type": "count"}},
+    "aggregation": {{"type": "count|sum|avg", "column": "col_name"}},
     "breakout": "col_name",
+    "filter": {{"column": "col_name", "operator": "not-null|=|!=|>|<|>=|<=", "value": "filter_value"}},
     "order_by": {{"column": "col_name", "direction": "desc"}},
     "limit": 5
   }}
 }}
 
-Only use columns from the available columns list. No markdown. Raw JSON only.
+Rules:
+- For "highest/lowest X per Y" questions, always use aggregation + breakout + order_by
+- order_by direction should match the question — "highest" means "desc", "lowest" means "asc"
+- filter value is required for all operators except "not-null"
+- Only use columns from the available columns list. No markdown. Raw JSON only.
 """
 
 TURN2_PROMPT = """
@@ -179,20 +214,26 @@ def generate_insights(
         table_name=table_name,
         semantics=json.dumps(semantics, indent=2),
         profile=json.dumps(profile, indent=2),
-        field_reference=_build_field_reference(field_map),
+        field_reference=_build_field_reference(field_map, semantics),
         prompt=prompt
     )
 
     result = _call_gemini(turn1)
 
-    if result.get("mode") == "query":
+    if result.get("mode") == "query":       
+        
         intent = result["intent"]
+        # print("=== INTENT ===")
+        # print(json.dumps(intent, indent=2))
+        
         mbql = _build_adhoc_mbql(intent, table_id, database_id, field_map)
-
+        
         # print("=== BUILT MBQL ===")
         # print(json.dumps(mbql, indent=2))
 
         query_results = execute_mbql_fn(mbql)
+
+        # query_results = execute_mbql_fn(mbql)
 
         turn2 = TURN2_PROMPT.format(
             prompt=prompt,
