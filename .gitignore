@@ -13,4 +13,4 @@ frontend/dist/*
 backend/app/uploads*
 backend/AIDash/uploads*
 dataset/
-
+git_history.txt
