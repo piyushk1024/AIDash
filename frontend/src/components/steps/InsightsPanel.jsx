@@ -101,6 +101,9 @@ export default function InsightsPanel({ datasetId }) {
           {loading ? '...' : 'Ask →'}
         </button>
       </div>
+      <p className="font-mono text-[10px] text-neutral-600 leading-relaxed">
+        Insights are AI-generated and may be inaccurate. Verify against source data for important decisions. Early stage feature.
+      </p>
 
       {error && (
         <div className="font-mono text-xs text-red-400">✕ {error}</div>

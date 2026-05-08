@@ -156,6 +156,10 @@ row detection) is built in.
 
 ---
 
+## Validation
+
+Chart and insight accuracy tested across 3 datasets. See [validation.md](validation.md) for full results.
+
 ## Local setup
 
 ### Prerequisites
