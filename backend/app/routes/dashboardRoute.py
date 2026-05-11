@@ -35,8 +35,10 @@ def validate_and_clean_charts(charts: list, field_map: dict) -> list:
         if aggregation == "count" and y_axis is not None:
             chart["y_axis"] = None
             y_axis = None
-        if aggregation in ("sum", "avg") and not y_axis:
-            continue
+        if aggregation == "avg" and y_axis:
+            y_field = field_map.get(y_axis, {})
+            if y_field.get("base_type") == "type/Boolean":
+                continue
         if chart_type == "scalar" and x_axis is not None:
             chart["x_axis"] = None
             x_axis = None

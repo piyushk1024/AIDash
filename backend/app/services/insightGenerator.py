@@ -46,9 +46,9 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
             col = agg.get("column")
             if col and col in field_map:
                 f = field_map[col]
+                if agg_type == "avg" and f["base_type"] == "type/Boolean":
+                    raise ValueError(f"Cannot avg boolean column '{col}'")
                 query_clause["aggregation"] = [[agg_type, ["field", f["id"], {"base-type": f["base_type"]}]]]
-            else:
-                raise ValueError(f"aggregation column '{col}' not found in field_map")
 
     # BREAKOUT (group by)
     if intent.get("breakout"):
@@ -188,7 +188,8 @@ No markdown. Raw JSON only.
 
 def _call_gemini(prompt: str) -> dict:
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        # model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         contents=prompt
     )
     raw = response.text.strip()

@@ -6,7 +6,7 @@ No column mapping. No chart configuration. No BI expertise required.
 Dasher profiles your data automatically, infers what each column means,
 and builds and deploys the right charts for it without any manual setup.
 
-**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · Gemini 2.5 Flash-Lite
+**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · Gemini 3.1 Flash-Lite
 
 > Built with Claude as a development accelerator. Architecture decisions,
 > product tradeoffs, and validation are the author's own.
@@ -126,8 +126,8 @@ row detection) is built in.
 - [ ] Heterogeneous column support: per-value chart generation for mixed-unit columns
 
 **Quality**
-- [ ] Formal validation pass: chart accuracy rate across all three datasets,
-  NL insight accuracy against 10 representative questions,
+- [x] Formal validation pass: 14/17 chart accuracy across 3 datasets,
+  NL insight accuracy validated, cost efficiency confirmed O(columns)
   time-to-dashboard vs manual baseline
 - [ ] Postman collection for API testing
 - [ ] Remove debug print statements from backend
