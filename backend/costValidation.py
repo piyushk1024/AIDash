@@ -34,7 +34,8 @@ if not GEMINI_API_KEY:
     print("ERROR: GEMINI_API_KEY not set", file=sys.stderr)
     sys.exit(1)
 
-MODEL = "gemini-2.5-flash-lite"
+# MODEL = "gemini-2.5-flash-lite"
+MODEL = "gemini-3.1-flash-lite"
 
 # Verify at https://ai.google.dev/pricing before running
 PRICE_PER_1M_INPUT  = 0.10   # USD

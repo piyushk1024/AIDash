@@ -75,7 +75,8 @@ Aim for 5 to 7 charts. Do not include markdown. Return raw JSON only.
 """
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
+        # model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
         contents=prompt
     )
 
