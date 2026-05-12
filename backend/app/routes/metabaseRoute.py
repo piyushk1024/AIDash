@@ -12,11 +12,14 @@ from app.services.metabaseClient import (
 )
 
 from app.services.database import get_cached_dashboard_plan, get_dataset_metadata, persist_metabase_dashboard_id
+import logging
+
 
 
 from app.config import settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.post("/create-metabase-dashboard/{dataset_id}")
 async def create_metabase_dashboard(dataset_id: str):
@@ -69,9 +72,10 @@ async def create_metabase_dashboard(dataset_id: str):
                 "card_id": card["id"]
             })
         except Exception as e:
+            logger.error("Card creation failed for '%s': %s", chart.get("chart_title"), str(e))
             errors.append({
                 "chart_title": chart.get("chart_title"),
-                "error": str(e)
+                "error": "Failed to create chart"
             })
 
     return {
