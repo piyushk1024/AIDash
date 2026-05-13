@@ -211,3 +211,13 @@ def execute_mbql_query(session_token: str, mbql: dict) -> dict:
         "columns": cols,
         "rows": [dict(zip(cols, row)) for row in rows]
     }
+
+def validate_card_query(session_token: str, card_id: int) -> str | None:
+    response = requests.post(
+        f"{METABASE_URL}/api/card/{card_id}/query",
+        headers={"X-Metabase-Session": session_token}
+    )
+    data = response.json()
+    # Metabase returns 202 even on query errors — check the payload
+    error = data.get("error") or data.get("data", {}).get("error")
+    return error  # None if clean, error string if not
