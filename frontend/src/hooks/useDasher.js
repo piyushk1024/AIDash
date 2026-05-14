@@ -65,9 +65,9 @@ export function useDasher() {
     if (!conflict) return;
     setConflict(null);
     if (choice === "replace") {
-      await upload(conflict.file, conflict.businessHint, true, false);
+      await upload(conflict.file, true, false);
     } else {
-      await upload(conflict.file, conflict.businessHint, false, true);
+      await upload(conflict.file, false, true);
     }
   }
 

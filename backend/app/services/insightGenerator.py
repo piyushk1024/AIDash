@@ -8,18 +8,29 @@ client = genai.Client(api_key=settings.GEMINI_API_KEY)
 def _build_field_reference(field_map: dict, semantics: dict) -> str:
     # Build a lookup of column -> semantic_role from semantics
     role_map = {}
-    for category in ("date_columns", "dimensions", "measures", "flags", "identifiers", "unknown"):
+    for category in (
+        "date_columns",
+        "dimensions",
+        "measures",
+        "flags",
+        "identifiers",
+        "unknown",
+    ):
         for col in semantics.get(category, []):
             role_map[col["column"]] = col["semantic_role"]
 
     lines = []
     for col, meta in field_map.items():
         role = role_map.get(col, "unknown")
-        lines.append(f"  - {col} (base_type: {meta['base_type']}, semantic_role: {role})")
+        lines.append(
+            f"  - {col} (base_type: {meta['base_type']}, semantic_role: {role})"
+        )
     return "\n".join(lines)
 
 
-def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: dict) -> dict:
+def _build_adhoc_mbql(
+    intent: dict, table_id: int, database_id: int, field_map: dict
+) -> dict:
 
     query_clause = {"source-table": table_id}
 
@@ -48,7 +59,9 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
                 f = field_map[col]
                 if agg_type == "avg" and f["base_type"] == "type/Boolean":
                     raise ValueError(f"Cannot avg boolean column '{col}'")
-                query_clause["aggregation"] = [[agg_type, ["field", f["id"], {"base-type": f["base_type"]}]]]
+                query_clause["aggregation"] = [
+                    [agg_type, ["field", f["id"], {"base-type": f["base_type"]}]]
+                ]
 
     # BREAKOUT (group by)
     if intent.get("breakout"):
@@ -57,7 +70,9 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
             col = col[0]
         if col in field_map:
             f = field_map[col]
-            query_clause["breakout"] = [["field", f["id"], {"base-type": f["base_type"]}]]
+            query_clause["breakout"] = [
+                ["field", f["id"], {"base-type": f["base_type"]}]
+            ]
         # if column missing, skip breakout silently
 
     # FILTER
@@ -76,7 +91,7 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
                 value = fil["value"]
                 if f["base_type"] == "type/Boolean" and op in ("=", "!="):
                     value = bool(value)
-                query_clause["filter"] = [op, field_ref, "value"]
+                query_clause["filter"] = [op, field_ref, value]
 
     # ORDER BY
     if intent.get("order_by"):
@@ -90,7 +105,9 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
             col = ob.get("column")
             if col and col in field_map:
                 f = field_map[col]
-                query_clause["order-by"] = [[direction, ["field", f["id"], {"base-type": f["base_type"]}]]]
+                query_clause["order-by"] = [
+                    [direction, ["field", f["id"], {"base-type": f["base_type"]}]]
+                ]
 
     # LIMIT
     if intent.get("limit"):
@@ -98,11 +115,7 @@ def _build_adhoc_mbql(intent: dict, table_id: int, database_id: int, field_map: 
         if isinstance(limit, int) and limit > 0:
             query_clause["limit"] = limit
 
-    return {
-        "database": database_id,
-        "type": "query",
-        "query": query_clause
-    }
+    return {"database": database_id, "type": "query", "query": query_clause}
 
 
 TURN1_PROMPT = """
@@ -190,7 +203,7 @@ def _call_gemini(prompt: str) -> dict:
     response = client.models.generate_content(
         # model="gemini-2.5-flash-lite",
         model="gemini-3.1-flash-lite",
-        contents=prompt
+        contents=prompt,
     )
     raw = response.text.strip()
     if "```json" in raw:
@@ -208,7 +221,7 @@ def generate_insights(
     profile: dict,
     semantics: dict,
     prompt: str,
-    execute_mbql_fn
+    execute_mbql_fn,
 ) -> dict:
 
     turn1 = TURN1_PROMPT.format(
@@ -216,19 +229,19 @@ def generate_insights(
         semantics=json.dumps(semantics, indent=2),
         profile=json.dumps(profile, indent=2),
         field_reference=_build_field_reference(field_map, semantics),
-        prompt=prompt
+        prompt=prompt,
     )
 
     result = _call_gemini(turn1)
 
-    if result.get("mode") == "query":       
-        
+    if result.get("mode") == "query":
+
         intent = result["intent"]
         # print("=== INTENT ===")
         # print(json.dumps(intent, indent=2))
-        
+
         mbql = _build_adhoc_mbql(intent, table_id, database_id, field_map)
-        
+
         # print("=== BUILT MBQL ===")
         # print(json.dumps(mbql, indent=2))
 
@@ -237,8 +250,7 @@ def generate_insights(
         # query_results = execute_mbql_fn(mbql)
 
         turn2 = TURN2_PROMPT.format(
-            prompt=prompt,
-            query_results=json.dumps(query_results, indent=2)
+            prompt=prompt, query_results=json.dumps(query_results, indent=2)
         )
         result = _call_gemini(turn2)
 

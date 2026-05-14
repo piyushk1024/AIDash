@@ -3,11 +3,21 @@ from uuid import uuid4, UUID
 from app.config import settings
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
-from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table, get_database_id
-from app.services.database import persist_dataset_metadata, get_dataset_metadata, delete_dataset
+
+# from app.services.metabaseClient import get_session_token, trigger_metabase_sync, fetch_field_map_for_table, get_database_id
+from app.services.database import (
+    persist_dataset_metadata,
+    get_dataset_metadata,
+    delete_dataset,
+)
 from app.services.metabaseClient import (
-    get_session_token, trigger_metabase_sync, fetch_field_map_for_table,
-    get_database_id, delete_dashboard, delete_card, get_dashboard_card_ids
+    get_session_token,
+    trigger_metabase_sync,
+    fetch_field_map_for_table,
+    get_database_id,
+    delete_dashboard,
+    delete_card,
+    get_dashboard_card_ids,
 )
 
 router = APIRouter()
@@ -17,23 +27,29 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload-csv")
-async def upload_csv(file: UploadFile = File(...), replace:bool = False, force_new:bool = False):
+async def upload_csv(
+    file: UploadFile = File(...), replace: bool = False, force_new: bool = False
+):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing Filename")
 
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
-    
+
     # Duplicate detection
     existing = next(
-        (f for f in UPLOAD_DIR.glob("*.csv") if f.name.split("_", 1)[-1] == file.filename),
-        None
+        (
+            f
+            for f in UPLOAD_DIR.glob("*.csv")
+            if f.name.split("_", 1)[-1] == file.filename
+        ),
+        None,
     )
     if existing and not replace and not force_new:
         existing_dataset_id = existing.name.split("_", 1)[0]
         raise HTTPException(
             status_code=409,
-            detail={"conflict": True, "existing_dataset_id": existing_dataset_id}
+            detail={"conflict": True, "existing_dataset_id": existing_dataset_id},
         )
 
     if existing and replace:
@@ -65,13 +81,15 @@ async def upload_csv(file: UploadFile = File(...), replace:bool = False, force_n
     try:
         load_result = load_csv_to_postgres(save_path, table_name)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}"
+        )
 
     try:
         token = get_session_token()
         database_id = get_database_id(token)
-        trigger_metabase_sync(token,database_id)
-        metabase_result = fetch_field_map_for_table(token, table_name,database_id)
+        trigger_metabase_sync(token, database_id)
+        metabase_result = fetch_field_map_for_table(token, table_name, database_id)
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e))
     except Exception as e:
@@ -81,7 +99,7 @@ async def upload_csv(file: UploadFile = File(...), replace:bool = False, force_n
         dataset_id=dataset_id,
         table_name=table_name,
         metabase_table_id=metabase_result["table_id"],
-        field_map=metabase_result["field_map"]
+        field_map=metabase_result["field_map"],
     )
 
     return {
@@ -90,7 +108,7 @@ async def upload_csv(file: UploadFile = File(...), replace:bool = False, force_n
         "table_name": table_name,
         "row_count": load_result["row_count"],
         "metabase_table_id": metabase_result["table_id"],
-        "field_map": metabase_result["field_map"]
+        "field_map": metabase_result["field_map"],
     }
 
 
@@ -112,10 +130,12 @@ async def list_datasets():
         if not get_dataset_metadata(dataset_id):
             continue
 
-        datasets.append({
-            "dataset_id": dataset_id,
-            "original_filename": original_filename,
-            "saved_filename": name,
-        })
+        datasets.append(
+            {
+                "dataset_id": dataset_id,
+                "original_filename": original_filename,
+                "saved_filename": name,
+            }
+        )
 
     return {"datasets": datasets}
