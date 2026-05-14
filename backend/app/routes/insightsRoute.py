@@ -1,24 +1,38 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.services.database import get_cached_semantics, get_dataset_metadata, persist_insight, get_insights_for_dataset
+from app.services.database import (
+    get_cached_semantics,
+    get_dataset_metadata,
+    persist_insight,
+    get_insights_for_dataset,
+    delete_insight,
+)
 from app.services.profiler import profile_csv
 from app.services.insightGenerator import generate_insights
-from app.services.metabaseClient import get_session_token, execute_mbql_query, get_database_id
+from app.services.metabaseClient import (
+    get_session_token,
+    execute_mbql_query,
+    get_database_id,
+)
 from app.config import settings
 
 router = APIRouter()
 
 UPLOAD_DIR = settings.UPLOAD_DIR
 
+
 class InsightRequest(BaseModel):
     prompt: str
+
 
 @router.post("/datasets/{dataset_id}/insights")
 async def post_insight(dataset_id: str, body: InsightRequest):
 
     semantics = get_cached_semantics(dataset_id)
     if not semantics:
-        raise HTTPException(status_code=404, detail="No semantics found. Run inference first.")
+        raise HTTPException(
+            status_code=404, detail="No semantics found. Run inference first."
+        )
 
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
@@ -47,7 +61,7 @@ async def post_insight(dataset_id: str, body: InsightRequest):
         profile=profile,
         semantics=semantics,
         prompt=body.prompt,
-        execute_mbql_fn=execute_mbql_fn
+        execute_mbql_fn=execute_mbql_fn,
     )
 
     insight_id = persist_insight(dataset_id, body.prompt, result["insights"])
@@ -66,6 +80,5 @@ async def get_insights(dataset_id: str):
 
 @router.delete("/datasets/{dataset_id}/insights/{insight_id}")
 async def delete_insight(dataset_id: str, insight_id: str):
-    from app.services.database import delete_insight as db_delete_insight
-    db_delete_insight(dataset_id, insight_id)
+    delete_insight(dataset_id, insight_id)
     return {"deleted": insight_id}

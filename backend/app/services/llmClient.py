@@ -5,10 +5,11 @@ from app.config import settings
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
+
 def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = None):
-    
+
     hint_line = f"Business context: {business_hint}" if business_hint else ""
-    
+
     prompt = f"""
     You are a data analyst. Analyse the dataset profile below and classify every column.
 
@@ -54,9 +55,10 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     Do not include any explanation or markdown. Return raw JSON only.
     """
     response = client.models.generate_content(
-    # model="gemini-2.5-flash-lite",
-    model="gemini-3.1-flash-lite",
-    contents=prompt)
+        # model="gemini-2.5-flash-lite",
+        model="gemini-3.1-flash-lite",
+        contents=prompt,
+    )
 
     # Strip markdown code fences if present
     raw = response.text.strip()
@@ -66,8 +68,6 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
             raw = raw[4:]
         raw = raw.strip()
 
-    
-    parsed = json.loads(raw)
     parsed = json.loads(raw)
     parsed["dataset_id"] = dataset_profile["dataset_id"]
     parsed["business_hint"] = business_hint

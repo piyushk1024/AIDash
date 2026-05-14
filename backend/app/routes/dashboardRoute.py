@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException
 from app.services.database import (
     get_cached_semantics,
     get_cached_dashboard_plan,
-    persist_dashboard_plan
+    persist_dashboard_plan,
+    get_dataset_metadata,
 )
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
@@ -14,6 +15,7 @@ UPLOAD_DIR = settings.UPLOAD_DIR
 
 VALID_AGGREGATIONS = {"count", "sum", "avg"}
 VALID_CHART_TYPES = {"bar", "line", "scalar", "pie"}
+
 
 def validate_and_clean_charts(charts: list, field_map: dict) -> list:
     seen = set()
@@ -75,7 +77,7 @@ async def generate_plan(dataset_id: str):
     if not semantics:
         raise HTTPException(
             status_code=404,
-            detail="No semantics found for this dataset. Run inference first."
+            detail="No semantics found for this dataset. Run inference first.",
         )
 
     # Load profile
@@ -85,7 +87,7 @@ async def generate_plan(dataset_id: str):
     profile = profile_csv(matches[0], dataset_id)
 
     # Load field map for validation
-    from app.services.database import get_dataset_metadata
+
     metadata = get_dataset_metadata(dataset_id)
     field_map = metadata["field_map"] if metadata else {}
 
@@ -98,7 +100,7 @@ async def generate_plan(dataset_id: str):
     if not plan["charts"]:
         raise HTTPException(
             status_code=500,
-            detail="No valid charts could be generated. Try re-running semantics inference."
+            detail="No valid charts could be generated. Try re-running semantics inference.",
         )
 
     # Persist and return

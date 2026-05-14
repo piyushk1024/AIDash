@@ -11,6 +11,6 @@ menotes.md
 frontend/node_modules/*
 frontend/dist/*
 backend/app/uploads*
-backend/AIDash/uploads*
+backend/AIDash/*
 dataset/
 git_history.txt
