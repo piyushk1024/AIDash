@@ -92,6 +92,8 @@ editNLChart: (datasetId, cardId, prompt, selectedColumns) =>
     prompt,
     selected_columns: selectedColumns,
   }),
+deleteNLChart: (datasetId, cardId) =>
+  request('DELETE', `/datasets/${datasetId}/dashboard/charts/${cardId}`),
 }
 
 

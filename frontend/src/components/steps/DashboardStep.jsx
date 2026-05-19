@@ -272,25 +272,40 @@ function AutocompleteInput({ value, onChange, suggestions, onSelect, onSubmit, l
   )
 }
 
-function CardRow({ card, onEdit }) {
-  const typeColour = {
-    bar:    'text-emerald-400',
-    line:   'text-blue-400',
-    scalar: 'text-amber-400',
-    pie:    'text-violet-400',
-  }[card.chart_type] ?? 'text-neutral-500'
+function CardRow({ card, onEdit, onDelete }) {
+  const TYPE_STYLE = {
+    bar:    'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    line:   'bg-blue-500/10    text-blue-400    border-blue-500/20',
+    scalar: 'bg-amber-500/10   text-amber-400   border-amber-500/20',
+    pie:    'bg-violet-500/10  text-violet-400  border-violet-500/20',
+  }[card.chart_type] ?? 'bg-neutral-800 text-neutral-500 border-neutral-700'
+
+  const usedColumns = [card.x_axis, card.y_axis].filter(Boolean)
 
   return (
-    <div className="flex items-center gap-2 font-mono text-xs py-1 group">
-      <span className={`text-[10px] uppercase w-10 shrink-0 ${typeColour}`}>{card.chart_type ?? '—'}</span>
-      <span className="text-neutral-400 flex-1 truncate">{card.chart_title}</span>
-      {card.healed && <span className="text-amber-400/60 text-[10px]">healed</span>}
-      <button
-        onClick={onEdit}
-        className="text-neutral-600 hover:text-amber-400 transition-colors text-[10px] uppercase tracking-wider opacity-0 group-hover:opacity-100"
-      >
-        edit
-      </button>
+    <div className="flex items-center gap-3 px-3 py-2 rounded bg-neutral-900 border border-neutral-800 hover:border-neutral-700 font-mono text-xs group transition-colors">
+      <span className={`border rounded px-1.5 py-0.5 text-[10px] uppercase shrink-0 ${TYPE_STYLE}`}>
+        {card.chart_type ?? '—'}
+      </span>
+      <span className="text-neutral-200 flex-1 truncate">{card.chart_title}</span>
+      {usedColumns.length > 0 && (
+        <div className="hidden group-hover:flex items-center gap-1">
+          {usedColumns.map(col => (
+            <span key={col} className="px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-500 text-[10px] border border-neutral-700">
+              {col}
+            </span>
+          ))}
+        </div>
+      )}
+      {card.healed && <span className="text-amber-400/60 text-[10px] shrink-0">healed</span>}
+      <div className="hidden group-hover:flex items-center gap-2 shrink-0">
+        <button onClick={onEdit} className="bg-transparent text-neutral-200 hover:text-amber-400 transition-colors text-[10px] uppercase tracking-wider">
+          Edit
+        </button>
+        <button onClick={onDelete} className="bg-transparent text-neutral-200 hover:text-amber-400 transition-colors text-[10px] uppercase tracking-wider">
+          Delete
+        </button>
+      </div>
     </div>
   )
 }
@@ -299,13 +314,15 @@ function NLEditRow({ card, datasetId, fieldMap, onDone, onCancel }) {
   const edit = useAutocomplete(fieldMap)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(false)
 
   async function handleSubmit() {
     if (!edit.value.trim()) return
     setLoading(true); setError(null)
     try {
       const result = await api.editNLChart(datasetId, card.card_id, edit.value.trim(), edit.selectedColumns)
-      onDone(result)
+      setSuccess(true)
+      setTimeout(() => onDone(result), 1000)
     } catch (e) {
       setError(typeof e.message === 'string' ? e.message : JSON.stringify(e.message))
     } finally {
@@ -327,6 +344,7 @@ function NLEditRow({ card, datasetId, fieldMap, onDone, onCancel }) {
         submitLabel="save"
       />
       {error && <div className="font-mono text-xs text-red-400">✕ {error}</div>}
+      {success && <div className="font-mono text-xs text-emerald-400">✓ Chart updated</div>}
       <button onClick={onCancel} className="font-mono text-[10px] text-neutral-600 hover:text-neutral-400 transition-colors">
         cancel
       </button>
@@ -334,11 +352,12 @@ function NLEditRow({ card, datasetId, fieldMap, onDone, onCancel }) {
   )
 }
 
-function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdited }) {
+function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdited, onCardDeleted }) {
   const add = useAutocomplete(fieldMap)
   const [addLoading, setAddLoading] = useState(false)
   const [addError, setAddError] = useState(null)
   const [editingCardId, setEditingCardId] = useState(null)
+  const [addSuccess, setAddSuccess] = useState(false)
 
   async function handleAdd() {
     if (!add.value.trim()) return
@@ -347,10 +366,20 @@ function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdite
       const result = await api.addNLChart(datasetId, add.value.trim(), add.selectedColumns)
       onCardAdded(result)
       add.reset()
+      setAddSuccess(true)
+      setTimeout(() => setAddSuccess(false), 3000)
     } catch (e) {
       setAddError(e.message)
     } finally {
       setAddLoading(false)
+    }
+  }
+  async function handleDelete(cardId) {
+    try {
+      await api.deleteNLChart(datasetId, cardId)
+      onCardDeleted(cardId)
+    } catch (e) {
+      // silently ignore — card stays in list
     }
   }
 
@@ -369,6 +398,9 @@ function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdite
           loading={addLoading}
           placeholder='e.g. "bar chart of sales by region"'
         />
+        {addSuccess && (
+          <div className="font-mono text-xs text-emerald-400">✓ Chart added — reload iframe to see it</div>
+        )}
         {addError && <div className="font-mono text-xs text-red-400">✕ {addError}</div>}
 
         {cards.length > 0 && (
@@ -384,7 +416,10 @@ function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdite
                     onDone={updated => { onCardEdited(card.card_id, updated); setEditingCardId(null) }}
                     onCancel={() => setEditingCardId(null)}
                   />
-                : <CardRow key={card.card_id} card={card} onEdit={() => setEditingCardId(card.card_id)} />
+                : <CardRow 
+                key={card.card_id} card={card} 
+                onEdit={() => setEditingCardId(card.card_id)}
+                onDelete={() => handleDelete(card.card_id)} />
             ))}
           </div>
         )}

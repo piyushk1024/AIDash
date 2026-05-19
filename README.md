@@ -4,7 +4,8 @@ Upload a CSV. Get a fully configured, interactive dashboard in minutes.
 No column mapping. No chart configuration. No BI expertise required.
 
 Dasher profiles your data automatically, infers what each column means,
-and builds and deploys the right charts for it without any manual setup.
+and builds and deploys the right charts, then lets you author, edit, and
+delete charts in natural language after the fact.
 
 **Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · Gemini 3.1 Flash-Lite
 
@@ -16,10 +17,11 @@ and builds and deploys the right charts for it without any manual setup.
 ## The problem
 
 Getting from raw data to a useful dashboard means manually mapping columns,
-choosing chart types, and configuring a BI tool. 
+choosing chart types, and configuring a BI tool.
 Dasher automates this: it profiles the dataset statistically, uses an LLM to
 infer what each column means and what questions it can answer, then constructs
-and deploys charts programmatically via the Metabase API.
+and deploys charts programmatically via the Metabase API, and keeps the
+dashboard editable via natural language after creation.
 
 ---
 
@@ -30,7 +32,8 @@ and deploys charts programmatically via the Metabase API.
 3. Gemini classifies every column: dimensions, measures, dates, flags, identifiers
 4. Two-pass dashboard planning: analytical questions first, then charts
 5. Charts created in Metabase via API, dashboard embedded in the UI
-6. Natural language insight engine for follow-up questions
+6. Natural language authoring: add, edit, or delete charts by describing what you want
+7. Natural language insight engine for follow-up questions against live data
 
 ---
 
@@ -63,8 +66,21 @@ frontend only proceeds when the data is genuinely queryable.
 
 **Idempotent dashboard rebuild**
 Rebuilding a dashboard deletes the old dashboard and all associated cards
-before recreating. This avoids orphaned cards and state drift, and produces
-a known clean state on every rebuild.
+before recreating. Produces a known clean state on every rebuild with no
+orphaned cards or state drift.
+
+**Two-stage self-healing chart creation**
+Chart creation failures are caught at two levels: Python-level API failures
+and Metabase rendering failures on successfully created cards. Both trigger
+an automated Gemini-powered heal cycle. Healed charts are flagged with a
+before/after diff in the UI. Charts that can't be healed are dropped cleanly
+with a diagnostic summary.
+
+**Natural language dashboard authoring**
+After a dashboard is built, charts can be added, edited, or deleted by
+typing a description. Each instruction goes through the same Gemini →
+MBQL and self-healing pipeline as the original build. Card IDs are persisted
+back into the dashboard plan so edits survive rehydration.
 
 ### Architecture diagram
 
@@ -77,10 +93,9 @@ a known clean state on every rebuild.
 **Heterogeneous column aggregation**
 Some columns mix units in a single field (e.g. runs and wickets in cricket
 data). Aggregating these without filtering by a sibling categorical is
-semantically meaningless. This is a solvable problem requiring a preprocessing
-layer. Schema fields and prompt updates already exist in the codebase;
-this was scoped out of MVP to avoid 3x complexity increase for marginal gain
-on clean datasets.
+semantically meaningless. Schema fields, prompt handling, and MBQL filter
+construction are built; this was scoped out of the initial release due to
+LLM prompt compliance being insufficiently reliable for production use.
 
 **Privacy-maximalist insight mode**
 An architecture where Gemini generates MBQL plus a response template with
@@ -89,11 +104,11 @@ deliberately deprioritised. It breaks for queries where the insight shape
 depends on seeing the data. User capability was weighted over the marginal
 privacy gain.
 
-**ETL layer**
-Assumed reasonably clean CSVs for MVP scope. Unit-suffix columns and
-dataset-specific formatting are too varied to generalise at this stage.
-CSV hardening (NA variants, comma-formatted numbers, blank rows, summary
-row detection) is built in.
+**Statistical profiling over raw row passing**
+The LLM receives a statistical summary of the dataset (means, distributions,
+value counts, correlations) rather than raw rows. Token usage is O(columns),
+not O(rows). Validated at ~8x lower token cost than naive row-passing with
+equivalent semantic inference quality.
 
 ---
 
@@ -105,10 +120,12 @@ row detection) is built in.
 - Two-pass dashboard planning: questions first, charts second, with post-planning
   validation and deduplication
 - Metabase chart auto-creation via API, idempotent rebuild
+- Two-stage self-healing chart creation with Gemini, healed/failed diff in UI
 - Public dashboard URL generation and iframe embedding
+- Natural language dashboard authoring: add, edit, and delete charts post-build
 - Natural language insight engine: two-turn Gemini flow, MBQL builder,
   insight history with persistence and delete
-- Dataset picker with rehydration from prior session state
+- Dataset picker with full rehydration from prior session state
 - Validated across three structurally distinct datasets: mall operations,
   Diwali sales (Indian retail, comma-formatted numbers), IPL deliveries (~260K rows)
 
@@ -117,25 +134,18 @@ row detection) is built in.
 ## Roadmap
 
 **Features**
-- [ ] Natural language chart manipulation: select a chart, type an instruction,
-  Gemini returns an updated spec, PUT to Metabase card API
+- [ ] Healing persistence: persist healed/failed card diffs to Postgres, survive rehydration
 - [ ] Audience-aware dashboard planning: CXO, engineering, marketing selector
   passed into the plan generation prompt
 - [ ] HAVING clause support for post-aggregation filtering in MBQL builder
-- [ ] Pipeline step restart: re-run semantics or plan without re-uploading
 - [ ] Heterogeneous column support: per-value chart generation for mixed-unit columns
 
-**Quality**
-- [x] Formal validation pass: 14/17 chart accuracy across 3 datasets,
-  NL insight accuracy validated, cost efficiency confirmed O(columns)
-  time-to-dashboard vs manual baseline
-- [ ] Postman collection for API testing
-- [ ] Remove debug print statements from backend
-
 **Infrastructure**
+- [ ] MCP server exposure: Dasher pipeline as an MCP server for Claude Desktop
+  and other MCP clients
+- [ ] Cloud deployment and auth
 - [ ] UI overhaul: layout polish, iframe placement, back navigation
-- [ ] Cloud deployment
-- [ ] Auth and multi-tenancy
+- [ ] Async I/O: replace requests + psycopg2 with httpx + asyncpg for concurrent load handling
 
 ---
 
@@ -149,7 +159,10 @@ row detection) is built in.
 | GET | `/datasets/{id}/state` | Full pipeline state for frontend rehydration |
 | POST | `/infer-dataset-semantics/{id}` | Profile and Gemini semantic inference, cached to Postgres |
 | POST | `/generate-dashboard-plan/{id}` | Two-pass LLM dashboard plan with validation |
-| POST | `/create-metabase-dashboard/{id}` | Idempotent dashboard and card creation |
+| POST | `/create-metabase-dashboard/{id}` | Idempotent dashboard and card creation with self-healing |
+| POST | `/datasets/{id}/dashboard/charts` | Add a chart via natural language |
+| PUT | `/datasets/{id}/dashboard/charts/{card_id}` | Edit a chart via natural language |
+| DELETE | `/datasets/{id}/dashboard/charts/{card_id}` | Delete a chart |
 | POST | `/datasets/{id}/insights` | Two-turn NL insight generation |
 | GET | `/datasets/{id}/insights` | Insight history |
 | DELETE | `/datasets/{id}/insights/{insight_id}` | Delete insight entry |
@@ -159,6 +172,8 @@ row detection) is built in.
 ## Validation
 
 Chart and insight accuracy tested across 3 datasets. See [validation.md](validation.md) for full results.
+
+---
 
 ## Local setup
 
@@ -196,5 +211,5 @@ Chart and insight accuracy tested across 3 datasets. See [validation.md](validat
 
 ## Status
 
-MVP complete. Pipeline is end-to-end functional and validated.
-Active development continues on the items above.
+MVP complete and actively extended. Pipeline is end-to-end functional,
+validated across multiple datasets, and shipping new capabilities.
