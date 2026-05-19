@@ -154,6 +154,21 @@ export function useDasher() {
     setStatus(initialStatus);
     setErrors({});
   }
+  //------------ Card Creation bits-------
+  function addCard(card) {
+  setDashboardResult(prev => ({
+    ...prev,
+    cards: [...(prev.cards ?? []), card],
+    cards_created: (prev.cards_created ?? 0) + 1,
+  }))
+}
+
+function replaceCard(cardId, card) {
+  setDashboardResult(prev => ({
+    ...prev,
+    cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
+  }))
+}
 
   // Everything a component might need, returned as one object
   return {
@@ -175,5 +190,7 @@ export function useDasher() {
     rehydrate,
     resolveConflict,
     reset,
+    addCard,
+    replaceCard
   };
 }

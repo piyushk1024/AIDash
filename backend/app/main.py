@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import uploadsRoute, profilerRoute, semanticsRoute, dashboardRoute, metabaseRoute,cleanupRoute,datasetsRoute, insightsRoute
+from app.routes import uploadsRoute, profilerRoute, semanticsRoute, dashboardRoute, metabaseRoute,cleanupRoute,datasetsRoute, insightsRoute, nlDashboardRoute
 
 # from app.schemas import semantics
 
@@ -21,4 +21,5 @@ app.include_router(dashboardRoute.router)
 app.include_router(metabaseRoute.router)
 app.include_router(insightsRoute.router)
 app.include_router(cleanupRoute.router)
+app.include_router(nlDashboardRoute.router)
 
