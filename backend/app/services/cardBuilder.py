@@ -53,6 +53,7 @@ def _clean_entry(chart: dict, card_id: int) -> dict:
     return {
         "card_id": card_id,
         "chart_title": chart["chart_title"],
+        "chart_type": chart["chart_type"],
         "healed": False,
     }
 
@@ -61,6 +62,7 @@ def _healed_entry(original: dict, healed: dict, card_id: int) -> dict:
     return {
         "card_id": card_id,
         "chart_title": healed["chart_title"],
+        "chart_type": healed.get("chart_type"),
         "healed": True,
         "original_chart": {
             "chart_title": original.get("chart_title"),

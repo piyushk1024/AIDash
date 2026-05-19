@@ -137,3 +137,17 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
     update_dashboard_plan(dataset_id, updated_plan)
 
     return result
+
+#----------Delete card functionality---------
+@router.delete("/datasets/{dataset_id}/dashboard/charts/{card_id}")
+async def delete_nl_chart(dataset_id: str, card_id: int):
+    semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
+
+    token = get_session_token()
+    delete_card(token, card_id)
+
+    updated_charts = [c for c in plan["charts"] if c.get("card_id") != card_id]
+    updated_plan = {**plan, "charts": updated_charts}
+    update_dashboard_plan(dataset_id, updated_plan)
+
+    return {"deleted": card_id}
