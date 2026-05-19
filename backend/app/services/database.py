@@ -195,3 +195,21 @@ def delete_insight(dataset_id: str, insight_id: str):
                 (insight_id, dataset_id)
             )
         conn.commit()
+
+def update_dashboard_plan(dataset_id: str, plan: dict):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE dashboard_plans
+                SET plan_json = %s
+                WHERE plan_id = (
+                    SELECT plan_id FROM dashboard_plans
+                    WHERE dataset_id = %s
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                )
+                """,
+                (json.dumps(plan), dataset_id)
+            )
+        conn.commit()

@@ -79,6 +79,7 @@ async def get_insights(dataset_id: str):
 
 
 @router.delete("/datasets/{dataset_id}/insights/{insight_id}")
-async def delete_insight(dataset_id: str, insight_id: str):
-    delete_insight(dataset_id, insight_id)
+async def delete_insight_entry(dataset_id: str, insight_id: str):
+    from app.services.database import delete_insight as db_delete_insight
+    db_delete_insight(dataset_id, insight_id)
     return {"deleted": insight_id}

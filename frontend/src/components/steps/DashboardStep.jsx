@@ -1,11 +1,18 @@
 import { useState } from 'react'
 import InsightsPanel from './InsightsPanel'
+import { api } from '../../lib/api'
 
 export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }) {
-  const { createDashboard, status, errors, dashboardResult, plan, datasetId } = dasher
+  const { createDashboard, status, errors, dashboardResult, plan, datasetId 
+    ,uploadResult, addCard, replaceCard,
+  } = dasher
   const [activeTab, setActiveTab] = useState('dashboard')
+  const [iframekey,setIframekey] = useState(false)
   const isLoading = status.dashboard === 'loading'
   const isDone = status.dashboard === 'done'
+  const fieldMap = uploadResult?.field_map ?? {}
+
+  function bumpIframe() { setIframekey (k => !k) }
 
   if (isDone && dashboardResult) {
     return (
@@ -48,6 +55,7 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
               Open in Metabase ↗
             </button>
             <iframe
+              key = {iframekey}
               src={dashboardResult.public_url}
               title="Metabase Dashboard"
               className="w-full rounded border border-neutral-800"
@@ -56,6 +64,13 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
             {(dashboardResult.cards?.some(c => c.healed) || dashboardResult.errors?.length > 0) && (
               <HealingSummary cards={dashboardResult.cards} errors={dashboardResult.errors} />
             )}
+            <NLAuthoringPanel
+              datasetId={datasetId}
+              fieldMap={fieldMap}
+              cards={dashboardResult.cards ?? []}
+              onCardAdded={card => { addCard(card); bumpIframe() }}
+              onCardEdited={(cardId, card) => { replaceCard(cardId, card); bumpIframe() }}
+            />
           </div>
         </div>
 
@@ -189,6 +204,191 @@ function HealingSummary({ cards, errors }) {
 
         </div>
       )}
+    </div>
+  )
+}
+
+function useAutocomplete(fieldMap) {
+  const [value, setValue] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [selectedColumns, setSelectedColumns] = useState([])
+
+  function handleChange(raw) {
+    setValue(raw)
+    const lastWord = raw.split(' ').pop().toLowerCase()
+    if (lastWord.length < 1) { setSuggestions([]); return }
+    const keys = Object.keys(fieldMap ?? {})
+    setSuggestions(keys.filter(k => k.toLowerCase().includes(lastWord)).slice(0, 6))
+  }
+
+  function onSelect(col) {
+    const parts = value.split(' ')
+    parts[parts.length - 1] = col
+    setValue(parts.join(' ') + ' ')
+    setSuggestions([])
+    setSelectedColumns(prev => prev.includes(col) ? prev : [...prev, col])
+  }
+
+  function reset() { setValue(''); setSuggestions([]); setSelectedColumns([]) }
+
+  return { value, handleChange, suggestions, selectedColumns, onSelect, reset }
+}
+
+function AutocompleteInput({ value, onChange, suggestions, onSelect, onSubmit, loading, placeholder, submitLabel = '+ add' }) {
+  function handleKeyDown(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit() }
+  }
+  return (
+    <div className="relative">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={loading}
+          className="flex-1 bg-transparent border border-neutral-700 rounded px-3 py-2 font-mono text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-amber-400 transition-colors disabled:opacity-50"
+        />
+        <button
+          onClick={onSubmit}
+          disabled={loading || !value.trim()}
+          className="px-4 py-2 rounded font-mono text-xs tracking-widest uppercase transition-all disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300"
+        >
+          {loading ? '...' : submitLabel}
+        </button>
+      </div>
+      {suggestions.length > 0 && (
+        <div className="absolute z-10 left-0 right-20 top-full mt-1 bg-neutral-900 border border-neutral-700 rounded shadow-lg overflow-hidden">
+          {suggestions.map(col => (
+            <button key={col} onClick={() => onSelect(col)}
+              className="w-full text-left px-3 py-1.5 font-mono text-xs text-neutral-300 hover:bg-neutral-800 hover:text-amber-400 transition-colors">
+              {col}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CardRow({ card, onEdit }) {
+  const typeColour = {
+    bar:    'text-emerald-400',
+    line:   'text-blue-400',
+    scalar: 'text-amber-400',
+    pie:    'text-violet-400',
+  }[card.chart_type] ?? 'text-neutral-500'
+
+  return (
+    <div className="flex items-center gap-2 font-mono text-xs py-1 group">
+      <span className={`text-[10px] uppercase w-10 shrink-0 ${typeColour}`}>{card.chart_type ?? '—'}</span>
+      <span className="text-neutral-400 flex-1 truncate">{card.chart_title}</span>
+      {card.healed && <span className="text-amber-400/60 text-[10px]">healed</span>}
+      <button
+        onClick={onEdit}
+        className="text-neutral-600 hover:text-amber-400 transition-colors text-[10px] uppercase tracking-wider opacity-0 group-hover:opacity-100"
+      >
+        edit
+      </button>
+    </div>
+  )
+}
+
+function NLEditRow({ card, datasetId, fieldMap, onDone, onCancel }) {
+  const edit = useAutocomplete(fieldMap)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function handleSubmit() {
+    if (!edit.value.trim()) return
+    setLoading(true); setError(null)
+    try {
+      const result = await api.editNLChart(datasetId, card.card_id, edit.value.trim(), edit.selectedColumns)
+      onDone(result)
+    } catch (e) {
+      setError(typeof e.message === 'string' ? e.message : JSON.stringify(e.message))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="py-1.5 space-y-1.5 border-l-2 border-amber-400/30 pl-3">
+      <div className="font-mono text-[10px] text-neutral-600 truncate">editing: {card.chart_title}</div>
+      <AutocompleteInput
+        value={edit.value}
+        onChange={edit.handleChange}
+        suggestions={edit.suggestions}
+        onSelect={edit.onSelect}
+        onSubmit={handleSubmit}
+        loading={loading}
+        placeholder="Describe the replacement chart..."
+        submitLabel="save"
+      />
+      {error && <div className="font-mono text-xs text-red-400">✕ {error}</div>}
+      <button onClick={onCancel} className="font-mono text-[10px] text-neutral-600 hover:text-neutral-400 transition-colors">
+        cancel
+      </button>
+    </div>
+  )
+}
+
+function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdited }) {
+  const add = useAutocomplete(fieldMap)
+  const [addLoading, setAddLoading] = useState(false)
+  const [addError, setAddError] = useState(null)
+  const [editingCardId, setEditingCardId] = useState(null)
+
+  async function handleAdd() {
+    if (!add.value.trim()) return
+    setAddLoading(true); setAddError(null)
+    try {
+      const result = await api.addNLChart(datasetId, add.value.trim(), add.selectedColumns)
+      onCardAdded(result)
+      add.reset()
+    } catch (e) {
+      setAddError(e.message)
+    } finally {
+      setAddLoading(false)
+    }
+  }
+
+  return (
+    <div className="border border-neutral-800 rounded overflow-hidden">
+      <div className="px-3 py-2 border-b border-neutral-800 font-mono text-[10px] text-neutral-600 uppercase tracking-wider">
+        Natural language authoring
+      </div>
+      <div className="p-3 space-y-3">
+        <AutocompleteInput
+          value={add.value}
+          onChange={add.handleChange}
+          suggestions={add.suggestions}
+          onSelect={add.onSelect}
+          onSubmit={handleAdd}
+          loading={addLoading}
+          placeholder='e.g. "bar chart of sales by region"'
+        />
+        {addError && <div className="font-mono text-xs text-red-400">✕ {addError}</div>}
+
+        {cards.length > 0 && (
+          <div className="border-t border-neutral-800 pt-3 space-y-0.5">
+            <div className="font-mono text-[10px] text-neutral-600 uppercase tracking-wider mb-2">Current charts</div>
+            {cards.map(card => (
+              editingCardId === card.card_id
+                ? <NLEditRow
+                    key={card.card_id}
+                    card={card}
+                    datasetId={datasetId}
+                    fieldMap={fieldMap}
+                    onDone={updated => { onCardEdited(card.card_id, updated); setEditingCardId(null) }}
+                    onCancel={() => setEditingCardId(null)}
+                  />
+                : <CardRow key={card.card_id} card={card} onEdit={() => setEditingCardId(card.card_id)} />
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

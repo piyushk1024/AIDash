@@ -39,7 +39,7 @@ def get_state(dataset_id: str):
             "public_url": metadata.get("public_url"),
             "cards_created": len(plan.get("charts", [])) if plan else 0,
             "cards": [
-                {"card_id": None, "chart_title": c["chart_title"]}
+                {"card_id": c.get("card_id"), "chart_title": c["chart_title"]}
                 for c in plan.get("charts", [])
             ] if plan else [],
             "errors": []

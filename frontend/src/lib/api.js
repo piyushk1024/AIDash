@@ -80,5 +80,19 @@ getInsights: (datasetId) =>
 
 deleteInsight: (datasetId, insightId) =>
   request('DELETE', `/datasets/${datasetId}/insights/${insightId}`),
+
+addNLChart: (datasetId, prompt, selectedColumns) =>
+  request('POST', `/datasets/${datasetId}/dashboard/charts`, {
+    prompt,
+    selected_columns: selectedColumns,
+  }),
+
+editNLChart: (datasetId, cardId, prompt, selectedColumns) =>
+  request('PUT', `/datasets/${datasetId}/dashboard/charts/${cardId}`, {
+    prompt,
+    selected_columns: selectedColumns,
+  }),
 }
+
+
 
