@@ -65,14 +65,15 @@ async def add_nl_chart(dataset_id: str, body: NLChartRequest):
 
     semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
     field_map = metadata["field_map"]
-    table_id = metadata["metabase_table_id"]
+    table_name = metadata["table_name"]
 
     profile = _fetch_profile_if_needed(dataset_id, body.selected_columns)
-
+    
     chart_spec = build_chart_from_prompt(
         prompt=body.prompt,
         field_map=field_map,
         semantics=semantics,
+        table_name=table_name,
         selected_columns=body.selected_columns,
         profile=profile,
     )
@@ -81,7 +82,7 @@ async def add_nl_chart(dataset_id: str, body: NLChartRequest):
     database_id = get_database_id(token)
     position = len(get_dashboard_card_ids(token, dashboard_id))
 
-    result, error = create_card_with_healing(token, chart_spec, table_id, field_map, database_id)
+    result, error = create_card_with_healing(token, chart_spec, field_map, database_id)
     if error:
         raise HTTPException(status_code=500, detail=error)
 
@@ -102,7 +103,7 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
 
     semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
     field_map = metadata["field_map"]
-    table_id = metadata["metabase_table_id"]
+    table_name = metadata["table_name"]
 
     profile = _fetch_profile_if_needed(dataset_id, body.selected_columns)
 
@@ -110,6 +111,7 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
         prompt=body.prompt,
         field_map=field_map,
         semantics=semantics,
+        table_name=table_name,
         selected_columns=body.selected_columns,
         profile=profile,
     )
@@ -120,7 +122,7 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
     delete_card(token, card_id)
     position = len(get_dashboard_card_ids(token, dashboard_id))
 
-    result, error = create_card_with_healing(token, chart_spec, table_id, field_map, database_id)
+    result, error = create_card_with_healing(token, chart_spec, field_map, database_id)
     if error:
         raise HTTPException(status_code=500, detail=error)
 

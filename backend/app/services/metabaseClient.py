@@ -27,68 +27,41 @@ def get_session_token() -> str:
     response.raise_for_status()
     return response.json()["id"]
 
+def create_card(
+    session_token: str,
+    chart_title: str,
+    chart_type: str,
+    sql: str,
+    database_id: int,
+    x_alias: str | None = None,
+    y_alias: str | None = None,    
+) -> dict:
 
-def create_card(session_token: str, chart: dict, table_id: int, field_map: dict, database_id:int,) -> dict:
-    
-    x_col = chart.get("x_axis")
-    y_col = chart.get("y_axis")
-    aggregation_type = chart.get("aggregation", "count")
-
-    if aggregation_type == "count":
-        aggregation = [["count"]]
-    elif aggregation_type in ("sum", "avg"):
-        if not y_col or y_col not in field_map:
-            raise ValueError(f"y_axis '{y_col}' not found in field_map for {aggregation_type} aggregation")
-        y_field = field_map[y_col]
-        aggregation = [[aggregation_type, ["field", y_field["id"], {"base-type": y_field["base_type"]}]]]
-    else:
-        raise ValueError(f"Unsupported aggregation type: {aggregation_type}")
-
-    query_clause = {
-        "source-table": table_id,
-        "aggregation": aggregation,
-    }
-
-    if x_col:
-        if x_col not in field_map:
-            raise ValueError(f"x_axis '{x_col}' not found in field_map")
-        x_field = field_map[x_col]
-        query_clause["breakout"] = [["field", x_field["id"], {"base-type": x_field["base_type"]}]]
-
-    if chart.get("filters"):
-        filter_col = chart["filters"][0]["column"]
-        filter_val = chart["filters"][0]["value"]
-        if filter_col not in field_map:
-            raise ValueError(f"filter column '{filter_col}' not found in field_map")
-        f_field = field_map[filter_col]
-        query_clause["filter"] = [
-            "=",
-            ["field", f_field["id"], {"base-type": f_field["base_type"]}],
-            filter_val
-        ]
-        
-
-    query = {
-        "database": database_id,
-        "type": "query",
-        "query": query_clause
-    }
+    viz_settings = {}
+    if chart_type != "scalar" and x_alias and y_alias:
+        viz_settings = {
+            "graph.dimensions": [x_alias],
+            "graph.metrics": [y_alias],
+        }
 
     payload = {
-        "name": chart["chart_title"],
-        "display": chart["chart_type"],
-        "dataset_query": query,
-        "visualization_settings": {}
+        "name": chart_title,
+        "display": chart_type,
+        "dataset_query": {
+            "type": "native",
+            "database": database_id,
+            "native": {"query": sql},
+        },
+        "visualization_settings": viz_settings,
     }
 
     response = requests.post(
         f"{METABASE_URL}/api/card",
         json=payload,
-        headers={"X-Metabase-Session": session_token}
+        headers={"X-Metabase-Session": session_token},
     )
     response.raise_for_status()
     return response.json()
-
 
 def create_dashboard(session_token: str, title: str) -> int:
     response = requests.post(

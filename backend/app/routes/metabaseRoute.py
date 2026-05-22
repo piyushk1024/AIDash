@@ -38,7 +38,7 @@ async def create_metabase_dashboard(dataset_id: str):
             detail="No dataset metadata found. Re-upload the CSV to generate field mappings."
         )
 
-    table_id = metadata["metabase_table_id"]
+    # table_id = metadata["metabase_table_id"]
     field_map = metadata["field_map"]
 
     token = get_session_token()
@@ -63,7 +63,7 @@ async def create_metabase_dashboard(dataset_id: str):
     updated_charts = []
 
     for i, chart in enumerate(plan["charts"]):
-        result, error = create_card_with_healing(token, chart, table_id, field_map, database_id)
+        result, error = create_card_with_healing(token, chart, field_map, database_id)
         if error:
             errors.append(error)
             updated_charts.append(chart)  # keep original in plan unchanged
@@ -73,10 +73,16 @@ async def create_metabase_dashboard(dataset_id: str):
         # Persist card_id back into the plan entry
         updated_chart = chart.copy()
         updated_chart["card_id"] = result["card_id"]
+        if result.get("healed"):
+            updated_chart["healed"] = True
+            updated_chart["original_chart"] = result.get("original_chart")
+            updated_chart["healed_chart"] = result.get("healed_chart")
+        # updated_charts.append(updated_chart)
         updated_charts.append(updated_chart)
 
     # Persist plan with card_ids stamped in
-    updated_plan = {**plan, "charts": updated_charts}
+    # updated_plan = {**plan, "charts": updated_charts}
+    updated_plan = {**plan, "charts": updated_charts, "errors": errors}
     update_dashboard_plan(dataset_id, updated_plan)
 
     return {

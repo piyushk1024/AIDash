@@ -44,10 +44,12 @@ def get_state(dataset_id: str):
                     "chart_title": c["chart_title"],
                     "chart_type": c.get("chart_type"),
                     "healed": c.get("healed", False),
+                    "original_chart": c.get("original_chart"),
+                    "healed_chart": c.get("healed_chart"),
                 }
                 for c in plan.get("charts", [])
             ] if plan else [],
-            "errors": []
+            "errors": plan.get("errors", []) if plan else []
         }
 
     return {

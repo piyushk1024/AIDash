@@ -22,8 +22,8 @@ export default function PlanStep({ dasher, isActive, isExpanded, onToggle }) {
 
         {isExpanded && (
           <div className="animate-fade-in mx-1 mb-3 px-4 py-3 border border-neutral-200 dark:border-neutral-800 rounded-b bg-neutral-50 dark:bg-neutral-900/50 space-y-3">
-            {plan.charts.map(chart => (
-              <ChartCard key={chart.chart_id} chart={chart} />
+            {plan.charts.map((chart, i) => (
+              <ChartCard key={i} chart={chart} />
             ))}
           </div>
         )}
@@ -84,19 +84,7 @@ function ChartCard({ chart }) {
           <div className="font-mono text-xs text-neutral-500 leading-relaxed">
             {chart.reasoning}
           </div>
-        </div>
-        <div className={`border rounded px-2 py-1 font-mono text-xs shrink-0 uppercase ${typeColour}`}>
-          {chart.chart_type}
-        </div>
-      </div>
-      <div className="mt-2.5 flex gap-4 font-mono text-xs">
-        {chart.x_axis && (
-          <span className="text-neutral-500">x <span className="text-neutral-600 dark:text-neutral-400">{chart.x_axis}</span></span>
-        )}
-        {chart.y_axis && (
-          <span className="text-neutral-500">y <span className="text-neutral-600 dark:text-neutral-400">{chart.y_axis}</span></span>
-        )}
-        <span className="text-neutral-500">agg <span className="text-neutral-600 dark:text-neutral-400">{chart.aggregation}</span></span>
+        </div>        
       </div>
     </div>
   )

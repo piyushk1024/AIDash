@@ -1,83 +1,146 @@
 import json
 from google import genai
 from app.config import settings
+from app.services.sqlGuard import validate_sql
 
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
-# PASS 1 — Questions:
-# Identify the 4 to 6 most interesting analytical questions this dataset can answer. Think about:
-# - What are the highest and lowest performing entities?
-# - Are there distributions that reveal imbalance or skew?
-# - Are there correlations between columns worth surfacing?
-# - Are there trends over time if date columns exist?
-# - Are there heterogeneous numeric columns that need to be broken out by a categorical?
-# - What would a domain expert want to know first?
 
-# PASS 2 — Charts:
-# For each question from Pass 1, plan one chart that answers it directly.
+def _build_chartable_context(semantics: dict, profile: dict, field_map: dict) -> tuple[set, dict, list]:
+    """
+    Returns (chartable_cols, filtered_field_map, filtered_profile_columns).
+    Filters all three to chartable columns only before passing to the LLM.
+    """
+    chartable_cols = {
+        col["column"]
+        for category in ("date_columns", "dimensions", "measures", "flags")
+        for col in semantics.get(category, [])
+        if col.get("chartable")
+    }
 
-def generate_dashboard_plan(dataset_id: str, semantics: dict, profile: dict) -> dict:
+    filtered_field_map = {
+        col: meta for col, meta in field_map.items()
+        if col in chartable_cols
+    }
 
-    prompt = f"""
-You are a BI analyst planning a Metabase dashboard. You will reason in two passes before producing output.
+    filtered_profile_cols = [
+        col for col in profile.get("columns", [])
+        if col["column_name"] in chartable_cols
+    ]
 
-Dataset semantics:
-{json.dumps(semantics, indent=2)}
+    return chartable_cols, filtered_field_map, filtered_profile_cols
+
+
+def _build_field_reference(filtered_field_map: dict, semantics: dict) -> str:
+    role_map = {}
+    for category in ("date_columns", "dimensions", "measures", "flags", "identifiers", "unknown"):
+        for col in semantics.get(category, []):
+            role_map[col["column"]] = col["semantic_role"]
+
+    return "\n".join(
+        f'  - "{col}" | {meta["base_type"]} | {role_map.get(col, "unknown")}'
+        for col, meta in filtered_field_map.items()
+    )
+
+
+PLANNER_PROMPT = """
+You are a BI analyst planning a Metabase dashboard using PostgreSQL native SQL queries.
+
+Table: "{table_name}"
+
+Available columns (name | base_type | semantic_role):
+{field_reference}
 
 Dataset profile (stats, value_counts, correlations, grouped_stats):
-{json.dumps(profile, indent=2)}
+{profile_summary}
 
 ---
 
-Before deciding on charts, consider what the most interesting analytical questions 
-are for this dataset — extremes, distributions, correlations, trends over time, 
-and domain-relevant KPIs. Then plan charts that answer those questions directly. 
-Capture your reasoning in the reasoning field of each chart.
+Reasoning pass:
+Before planning charts, identify the 5 to 7 most analytically interesting questions 
+this dataset can answer. Consider:
+- Rankings and extremes (top/bottom performers)
+- Distributions across categorical dimensions
+- Trends over time where date columns exist
+- Correlations between measures
+- Derived metrics: ratios, rates, percentages computed in SQL
+- Statistical spread: percentiles, variance
+- Comparative analysis: how does one segment differ from another
 
----
+Chart planning pass:
+For each question, plan one chart. Write PostgreSQL SQL that answers it directly.
+Alias all output columns clearly — Metabase uses aliases as axis labels.
 
-HARD CONSTRAINTS — these are non-negotiable:
-- Only use columns where chartable is true
-- Never use identifier or serial number columns as x_axis or y_axis
-- No two charts may share the same (x_axis, y_axis, aggregation) combination
-- Do not plan ratios, rates, or derived columns — Metabase cannot compute them
-- Do not plan top-N charts — Metabase cannot filter to top N in basic query mode
-- bar and line charts must have a non-null x_axis
-- scalar charts must have x_axis null
-- sum and avg aggregations require a non-null y_axis
-- count aggregation must have y_axis null
-- Only use column names that exist exactly as written in the semantics
-- For measures where heterogeneous is true, you MUST populate filters with [{{"column": filter_column, "value": one_meaningful_value}}] — never aggregate a heterogeneous measure without a filter
-- For heterogeneous measures, generate one chart per meaningful filter value (use value_counts from the profile to find them)
+HARD CONSTRAINTS — non-negotiable:
+- Only use columns from the available columns list above
+- Double-quote all column and table names
+- PostgreSQL syntax only
+- SELECT only — never emit DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
+- No semicolons
+- chart_type must match the SQL output shape:
+    - scalar: query returns exactly one row, one column
+    - bar, line, pie: first column is dimension, second column is measure
+- No two charts may have the same chart_title
 
-METABASE CAPABILITIES — only these are supported:
-- aggregations: count, sum, avg
-- chart types: bar, line, scalar, pie
-- one x_axis column, one y_axis column, no multi-series
-
----
+POSTGRESQL CAPABILITIES — use these where analytically justified:
+- Window functions: RANK() OVER, SUM() OVER, AVG() OVER (PARTITION BY / ORDER BY)
+- Date truncation: DATE_TRUNC('month', "date_col") for time series
+- Percentiles: PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY "col")
+- Post-aggregation filtering: HAVING
+- Staged queries: CTEs (WITH ... AS (...) SELECT ...)
+- Conditional bucketing: CASE WHEN ... THEN ... END
+- Top-N: ORDER BY ... LIMIT N
+- ROUND("col"::numeric, 2) for decimal formatting
 
 Return ONLY a JSON object with exactly these fields:
-- dataset_id: string
-- dashboard_title: string
-- filters: list of {{"column": column_name, "value": filter_value}} — empty list for non-heterogeneous measures, one entry for heterogeneous ones
-- charts: list of objects, each with:
-    - chart_id: short unique slug
-    - chart_title: string
-    - chart_type: one of "line", "bar", "scalar", "pie"
-    - aggregation: one of "count", "sum", "avg"
-    - x_axis: column name or null
-    - y_axis: column name or null
-    - filters: empty list
-    - reasoning: one sentence tying this chart back to a specific analytical question
+{{
+  "dataset_id": "{dataset_id}",
+  "dashboard_title": "string",
+  "charts": [
+    {{
+      "chart_title": "string",
+      "chart_type": "bar" | "line" | "scalar" | "pie",
+      "sql": "SELECT ...",
+      "x_alias": "exact column alias used for the dimension in the SQL, null for scalar",
+      "y_alias": "exact column alias used for the measure in the SQL, null for scalar",
+      "reasoning": "one sentence tying this chart to a specific analytical question"
+    }}
+  ]
+}}
 
-Aim for 5 to 7 charts. Do not include markdown. Return raw JSON only.
+Aim for 5 to 7 charts. Raw JSON only, no markdown.
 """
 
+
+def generate_dashboard_plan(
+    dataset_id: str,
+    semantics: dict,
+    profile: dict,
+    table_name: str,
+    field_map: dict,
+) -> dict:
+
+    chartable_cols, filtered_field_map, filtered_profile_cols = _build_chartable_context(
+        semantics, profile, field_map
+    )
+
+    field_reference = _build_field_reference(filtered_field_map, semantics)
+
+    profile_summary = {
+        "columns": filtered_profile_cols,
+        "grouped_stats": profile.get("grouped_stats", {}),
+    }
+
+    prompt = PLANNER_PROMPT.format(
+        table_name=table_name,
+        dataset_id=dataset_id,
+        field_reference=field_reference,
+        profile_summary=json.dumps(profile_summary, indent=2),
+    )
+
     response = client.models.generate_content(
-        # model="gemini-2.5-flash-lite",
         model="gemini-3.1-flash-lite",
-        contents=prompt
+        contents=prompt,
     )
 
     raw = response.text.strip()
@@ -85,12 +148,18 @@ Aim for 5 to 7 charts. Do not include markdown. Return raw JSON only.
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
-    
-    # raw = response.text.strip()
-    # print("=== GEMINI RAW RESPONSE ===")
-    # print(repr(raw))
-    # print("=== END ===")
 
     parsed = json.loads(raw)
     parsed["dataset_id"] = dataset_id
+
+    # Validate SQL for each chart — drop charts that fail the guard
+    safe_charts = []
+    for chart in parsed.get("charts", []):
+        try:
+            validate_sql(chart["sql"], context=chart.get("chart_title", ""))
+            safe_charts.append(chart)
+        except ValueError:
+            pass
+
+    parsed["charts"] = safe_charts
     return parsed
