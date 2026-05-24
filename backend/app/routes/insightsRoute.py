@@ -11,7 +11,7 @@ from app.services.profiler import profile_csv
 from app.services.insightGenerator import generate_insights
 from app.services.metabaseClient import (
     get_session_token,
-    execute_mbql_query,
+    execute_sql_query,
     get_database_id,
 )
 from app.config import settings
@@ -50,8 +50,8 @@ async def post_insight(dataset_id: str, body: InsightRequest):
     session_token = get_session_token()
     database_id = get_database_id(session_token)
 
-    def execute_mbql_fn(mbql: dict) -> dict:
-        return execute_mbql_query(session_token, mbql)
+    def execute_sql_fn(sql: str) -> dict:
+        return execute_sql_query(session_token, sql, database_id)
 
     result = generate_insights(
         table_name=table_name,
@@ -61,7 +61,7 @@ async def post_insight(dataset_id: str, body: InsightRequest):
         profile=profile,
         semantics=semantics,
         prompt=body.prompt,
-        execute_mbql_fn=execute_mbql_fn,
+        execute_sql_fn=execute_sql_fn,
     )
 
     insight_id = persist_insight(dataset_id, body.prompt, result["insights"])

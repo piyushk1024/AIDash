@@ -168,21 +168,24 @@ def create_public_link(session_token: str, dashboard_id: int) -> str:
     uuid = response.json()["uuid"]
     return f"{METABASE_URL}/public/dashboard/{uuid}"
 
-def execute_mbql_query(session_token: str, mbql: dict) -> dict:
+def execute_sql_query(session_token: str, sql: str, database_id: int) -> dict:
+    payload = {
+        "database": database_id,
+        "type": "native",
+        "native": {"query": sql},
+    }
     response = requests.post(
         f"{METABASE_URL}/api/dataset",
-        json=mbql,
-        headers={"X-Metabase-Session": session_token}
+        json=payload,
+        headers={"X-Metabase-Session": session_token},
     )
     response.raise_for_status()
     data = response.json()
-
-    # Return rows + column names in a clean structure
     cols = [col["name"] for col in data.get("data", {}).get("cols", [])]
     rows = data.get("data", {}).get("rows", [])
     return {
         "columns": cols,
-        "rows": [dict(zip(cols, row)) for row in rows]
+        "rows": [dict(zip(cols, row)) for row in rows],
     }
 
 def validate_card_query(session_token: str, card_id: int) -> str | None:
