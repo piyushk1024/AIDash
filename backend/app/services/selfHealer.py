@@ -1,9 +1,9 @@
 import json
-from google import genai
+from app.services.llm import generate
 from app.config import settings
 from app.services.sqlGuard import validate_sql
 
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
+
 
 HEAL_PROMPT = """
 You are fixing a Metabase native SQL chart that failed.
@@ -44,12 +44,8 @@ def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
         field_reference=field_reference
     )
 
-    response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
-        contents=prompt
-    )
-
-    raw = response.text.strip()
+    raw = generate(prompt)
+    
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:

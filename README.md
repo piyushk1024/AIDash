@@ -4,10 +4,10 @@ Upload a CSV. Get a fully configured, interactive dashboard in minutes.
 No column mapping. No chart configuration. No BI expertise required.
 
 Dasher profiles your data automatically, infers what each column means,
-and builds and deploys the right charts, then lets you author, edit, and
+and builds and deploys the right charts. It then lets you author, edit, and
 delete charts in natural language after the fact.
 
-**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · Gemini 3.1 Flash-Lite
+**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · LiteLLM · Gemini 3.1 Flash-Lite
 
 > Built with Claude as a development accelerator. Architecture decisions,
 > product tradeoffs, and validation are the author's own.
@@ -28,7 +28,7 @@ and natural language authoring after the fact. Zero manual configuration at any 
 
 1. Upload a CSV
 2. Automatic statistical profiling: stats, value counts, correlations, grouped stats
-3. Gemini classifies every column: dimensions, measures, dates, flags, identifiers
+3. LLM classifies every column: dimensions, measures, dates, flags, identifiers
 4. Two-pass dashboard planning: analytical questions first, then charts
 5. PostgreSQL-native charts created in Metabase via API, embedded in the UI
 6. Natural language authoring: add, edit, or delete charts by describing what you want
@@ -53,6 +53,29 @@ map lookups. The LLM never touches the database directly. Validation is
 deterministic and independently debuggable. Invalid SQL is rejected before
 it reaches Metabase.
 
+**LLM-agnostic by design**
+All LLM calls are routed through a single LiteLLM wrapper. Switching from
+Gemini to GPT-4o or Claude is a one-line config change, no code changes
+anywhere in the pipeline. Provider, model, and API key are all externalised
+to environment variables.
+
+**Statistical profiling over raw row passing**
+The LLM receives a statistical summary of the dataset: means, distributions,
+value counts, and correlations; not raw rows. Token usage is O(columns),
+not O(rows). Validated across multiple datasets:
+
+| Dataset | Rows | Token ratio (Dasher vs naive) | Cost ratio |
+|---|---|---|---|
+| IPL deliveries | 260,920 | 1x vs 4.3x (at 1k rows sampled) | 1x vs 3.5x |
+| API error logs | 220,000 | 1x vs 9.9x (at 1k rows sampled) | 1x vs 8.0x |
+| Metaverse stats | 37 | 1x vs 0.7x | 1x vs 0.8x |
+
+The efficiency advantage is structural and scales with row count. At full
+dataset scale, naive row-passing is impractical. The crossover point is
+around a few hundred rows, beyond that Dasher's profile overhead is
+consistently cheaper and grows at a fraction of the rate. Dashboard
+cost can be as low as $0.002.
+
 **Privacy and cost optimisation built into the insight flow**
 The natural language insight engine runs in two turns. Turn 1 classifies
 whether the question can be answered from cached profile statistics or needs
@@ -65,9 +88,9 @@ table ID, field IDs, and base types fetched and persisted post-sync. The
 pipeline is fully parameterised per dataset with no static config anywhere.
 
 **Upload completes only when Metabase is ready**
-After upload, the system validates readiness by running a live query against
-Metabase before returning. No fixed sleep intervals. No race conditions. The
-frontend only proceeds when the data is genuinely queryable.
+After upload, the system validates readiness by polling Metabase until the
+table is queryable before returning. No fixed sleep intervals. No race
+conditions. The frontend only proceeds when the data is genuinely ready.
 
 **Idempotent dashboard rebuild**
 Rebuilding a dashboard deletes the old dashboard and all associated cards
@@ -77,21 +100,15 @@ orphaned cards or state drift.
 **Two-stage self-healing chart creation**
 Chart creation failures are caught at two levels: Python-level API failures
 and Metabase rendering failures on successfully created cards. Both trigger
-an automated Gemini-powered heal cycle. Healed charts are flagged with a
+an automated LLM-powered heal cycle. Healed charts are flagged with a
 before/after diff in the UI. Charts that cannot be healed are dropped cleanly
 with a diagnostic summary.
 
 **Natural language dashboard authoring**
 After a dashboard is built, charts can be added, edited, or deleted by
-typing a description. Each instruction goes through the same Gemini to SQL
+typing a description. Each instruction goes through the same LLM-to-SQL
 and self-healing pipeline as the original build. Card IDs are persisted
 back into the dashboard plan so edits survive rehydration.
-
-**Statistical profiling over raw row passing**
-The LLM receives a statistical summary of the dataset: means, distributions,
-value counts, correlations, rather than raw rows. Token usage is O(columns),
-not O(rows). Validated at ~8x lower token cost than naive row-passing with
-equivalent semantic inference quality.
 
 ### Architecture diagram
 
@@ -109,11 +126,17 @@ and no translation layer between what the LLM wants to express and what gets
 executed. The intent dict and MBQL construction layer were removed entirely.
 
 **Privacy-maximalist insight mode**
-An architecture where Gemini generates SQL plus a response template with
+An architecture where the LLM generates SQL plus a response template with
 placeholders, with FastAPI filling values locally, was evaluated and
 deliberately deprioritised. It breaks for queries where the insight shape
 depends on seeing the data. User capability was weighted over the marginal
 privacy gain.
+
+**LiteLLM over direct SDK calls**
+LLM calls were originally made directly via the google-genai SDK. These were
+consolidated behind a single LiteLLM wrapper, making the provider swappable
+via config with no downstream code changes. The abstraction cost was one
+small service file. The flexibility gain is permanent.
 
 ---
 
@@ -121,19 +144,20 @@ privacy gain.
 
 - CSV upload with duplicate detection and replace/create-new conflict resolution
 - Automatic profiling: stats, value counts, correlations, grouped stats per column
-- Gemini semantic inference with confidence scores, cached to Postgres
+- LLM semantic inference with confidence scores, cached to Postgres
 - Two-pass dashboard planning: questions first, charts second, with post-planning
   validation and deduplication
 - PostgreSQL-native chart creation via Metabase API, idempotent rebuild
 - Full SQL capability: window functions, CTEs, percentiles, HAVING, derived metrics
-- Two-stage self-healing chart creation with Gemini, healed/failed diff in UI
+- Two-stage self-healing chart creation with LLM, healed/failed diff in UI
 - Public dashboard URL generation and iframe embedding
 - Natural language dashboard authoring: add, edit, and delete charts post-build
-- Natural language insight engine: two-turn Gemini flow, SQL execution,
+- Natural language insight engine: two-turn LLM flow, SQL execution,
   insight history with persistence and delete
 - Dataset picker with full rehydration from prior session state
+- LLM-agnostic via LiteLLM: swap provider with a single config change
 - Validated across five structurally distinct datasets: Mall operations (synthetic),
-  Flipkart Diwali sales, IPL deliveries (~260K rows)
+  Flipkart Diwali sales, IPL deliveries (~260K rows), API error logs (~220K rows)
 
 ---
 
@@ -154,7 +178,6 @@ privacy gain.
 - [ ] Async I/O: replace requests + psycopg2 with httpx + asyncpg
 - [ ] Cloud deployment and auth
 
-
 ---
 
 ## API reference
@@ -165,7 +188,7 @@ privacy gain.
 | GET | `/datasets` | List uploaded datasets |
 | DELETE | `/datasets/{id}` | Delete dataset, Metabase dashboard, and all records |
 | GET | `/datasets/{id}/state` | Full pipeline state for frontend rehydration |
-| POST | `/infer-dataset-semantics/{id}` | Profile and Gemini semantic inference, cached to Postgres |
+| POST | `/infer-dataset-semantics/{id}` | Profile and LLM semantic inference, cached to Postgres |
 | POST | `/generate-dashboard-plan/{id}` | Two-pass LLM dashboard plan with validation |
 | POST | `/create-metabase-dashboard/{id}` | Idempotent dashboard and card creation with self-healing |
 | POST | `/datasets/{id}/dashboard/charts` | Add a chart via natural language |
@@ -180,7 +203,8 @@ privacy gain.
 ## Validation
 
 Chart and insight accuracy tested across 5 datasets including IPL deliveries
-at 260K rows. See [validation.md](validation.md) for full results.
+at 260K rows. Cost efficiency validated via `costValidation.py` across 3 datasets
+at varying scales. See [validation.md](validation.md) for full results.
 
 ---
 
@@ -191,7 +215,7 @@ at 260K rows. See [validation.md](validation.md) for full results.
 - Node.js + npm
 - Docker Desktop
 - PostgreSQL on port 5432
-- Google AI Studio API key
+- API key for your LLM provider (Gemini, OpenAI, or Anthropic)
 
 ### Steps
 
@@ -209,7 +233,8 @@ at 260K rows. See [validation.md](validation.md) for full results.
 | Variable | Description |
 |----------|-------------|
 | `UPLOAD_DIR` | Path to CSV upload directory |
-| `GEMINI_API_KEY` | Google AI Studio API key |
+| `LLM_API_KEY` | API key for your chosen LLM provider |
+| `LLM_MODEL` | LiteLLM model string, e.g. `gemini/gemini-3.1-flash-lite`, `openai/gpt-4o-mini`, `anthropic/claude-haiku-4-5-20251001` |
 | `DATABASE_URL` | Postgres connection string |
 | `METABASE_URL` | Metabase base URL (default: http://localhost:3000) |
 | `METABASE_USERNAME` | Metabase admin username |

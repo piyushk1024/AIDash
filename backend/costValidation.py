@@ -2,42 +2,32 @@
 cost_faceoff.py — Dashboard creation: Dasher profiling vs naive row-passing
 
 Tests the core architectural claim:
-  Dasher sends O(columns) statistical summary to Gemini for semantic inference.
+  Dasher sends O(columns) statistical summary to the LLM for semantic inference.
   Naive sends raw CSV rows directly. Row count should not affect Dasher's token usage.
 
 Usage:
     python cost_faceoff.py --csv path/to/file.csv --rows 500
 
-Requires GEMINI_API_KEY in .env or environment.
+Requires LLM_API_KEY and LLM_MODEL in .env or environment.
 
 Output: markdown table ready to paste into VALIDATION.md or README.
 """
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
+import litellm
 import pandas as pd
-from google import genai
 from dotenv import load_dotenv
 
-# Allow imports from app/ when run from repo root
-
+from app.config import settings
 from app.services.profiler import profile_csv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    print("ERROR: GEMINI_API_KEY not set", file=sys.stderr)
-    sys.exit(1)
-
-# MODEL = "gemini-2.5-flash-lite"
-MODEL = "gemini-3.1-flash-lite"
-
-# Verify at https://ai.google.dev/pricing before running
+# Verify pricing at your provider's docs before running
 PRICE_PER_1M_INPUT  = 0.10   # USD
 PRICE_PER_1M_OUTPUT = 0.40   # USD
 
@@ -64,14 +54,15 @@ Confidence is a float between 0 and 1.
 No markdown. Raw JSON only.
 """
 
-client = genai.Client(api_key=GEMINI_API_KEY)
 
-
-def call_gemini(prompt: str) -> dict:
-    response = client.models.generate_content(model=MODEL, contents=prompt)
-    usage = response.usage_metadata
-    input_tokens  = usage.prompt_token_count
-    output_tokens = usage.candidates_token_count
+def call_llm(prompt: str) -> dict:
+    response = litellm.completion(
+        model=settings.LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        api_key=settings.LLM_API_KEY,
+    )
+    input_tokens  = response.usage.prompt_tokens
+    output_tokens = response.usage.completion_tokens
     cost = (
         (input_tokens  / 1_000_000) * PRICE_PER_1M_INPUT +
         (output_tokens / 1_000_000) * PRICE_PER_1M_OUTPUT
@@ -80,29 +71,29 @@ def call_gemini(prompt: str) -> dict:
         "input_tokens":  input_tokens,
         "output_tokens": output_tokens,
         "cost_usd":      round(cost, 6),
-        "response":      response.text.strip(),
+        "response":      response.choices[0].message.content.strip(),
     }
 
 
 def run_dasher(csv_path: Path) -> dict:
-    """Profile with pandas, send summary to Gemini."""
+    """Profile with pandas, send summary to LLM."""
     print("  Building profile...")
     profile = profile_csv(csv_path, dataset_id="faceoff")
     context = f"Dataset profile (statistical summary):\n{json.dumps(profile, indent=2)}"
     prompt  = SEMANTICS_PROMPT_TEMPLATE.format(context=context)
-    result  = call_gemini(prompt)
+    result  = call_llm(prompt)
     result["context_chars"] = len(context)
     result["approach"]      = "Dasher (profile)"
     return result
 
 
 def run_naive(csv_path: Path, max_rows: int) -> dict:
-    """Send raw CSV rows directly to Gemini."""
+    """Send raw CSV rows directly to LLM."""
     print(f"  Reading {max_rows} raw rows...")
     df      = pd.read_csv(csv_path, encoding="utf-8-sig").head(max_rows)
     context = f"Raw dataset ({max_rows} rows):\n{df.to_csv(index=False)}"
     prompt  = SEMANTICS_PROMPT_TEMPLATE.format(context=context)
-    result  = call_gemini(prompt)
+    result  = call_llm(prompt)
     result["context_chars"] = len(context)
     result["approach"]      = f"Naive ({max_rows} rows)"
     return result
@@ -110,7 +101,7 @@ def run_naive(csv_path: Path, max_rows: int) -> dict:
 
 def score_semantics(response_text: str, csv_path: Path) -> str:
     """
-    Rough quality check — did Gemini identify the right number of columns?
+    Rough quality check — did the LLM identify the right number of columns?
     Returns a short pass/fail string for the table.
     """
     try:
@@ -128,11 +119,11 @@ def score_semantics(response_text: str, csv_path: Path) -> str:
             parsed.get("flags",        []) +
             parsed.get("identifiers",  [])
         )
-        df           = pd.read_csv(csv_path, encoding="utf-8-sig", nrows=1)
-        expected     = len(df.columns)
-        classified   = len(all_cols)
-        match        = "✓" if classified == expected else f"⚠ {classified}/{expected} cols"
-        grain        = parsed.get("dataset_grain", "—")
+        df         = pd.read_csv(csv_path, encoding="utf-8-sig", nrows=1)
+        expected   = len(df.columns)
+        classified = len(all_cols)
+        match      = "✓" if classified == expected else f"⚠ {classified}/{expected} cols"
+        grain      = parsed.get("dataset_grain", "—")
         return f"{match} - grain: {grain}"
     except Exception as e:
         return f"✗ parse error: {e}"
@@ -141,7 +132,7 @@ def score_semantics(response_text: str, csv_path: Path) -> str:
 def print_report(dasher: dict, naive: dict, csv_path: Path, max_rows: int):
     total_rows = len(pd.read_csv(csv_path, encoding="utf-8-sig"))
     ratio      = round(naive["input_tokens"] / dasher["input_tokens"], 1)
-    cost_ratio = round(naive["cost_usd"]     / dasher["cost_usd"],     1) if dasher["cost_usd"] else "—"
+    cost_ratio = round(naive["cost_usd"] / dasher["cost_usd"], 1) if dasher["cost_usd"] else "—"
 
     dasher_quality = score_semantics(dasher["response"], csv_path)
     naive_quality  = score_semantics(naive["response"],  csv_path)
@@ -150,7 +141,7 @@ def print_report(dasher: dict, naive: dict, csv_path: Path, max_rows: int):
     print(f"## Cost Faceoff: Dashboard Semantic Inference\n")
     print(f"Dataset: `{csv_path.name}` — {total_rows:,} rows  ")
     print(f"Naive row limit: {max_rows}  ")
-    print(f"Model: `{MODEL}`  ")
+    print(f"Model: `{settings.LLM_MODEL}`  ")
     print(f"Pricing: input ${PRICE_PER_1M_INPUT}/1M | output ${PRICE_PER_1M_OUTPUT}/1M\n")
 
     print("| | Dasher (profile) | Naive ({} rows) |".format(max_rows))

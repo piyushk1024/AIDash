@@ -56,7 +56,7 @@ export default function SemanticsStep({ dasher, isActive, isExpanded, onToggle }
       <div className="rounded-lg border border-amber-400/30 bg-amber-400/[0.02] dark:bg-amber-400/[0.03] px-6 py-5">
         <StepHeader title="Infer Semantics" />
         <p className="font-mono text-xs text-neutral-500 mt-1 mb-5">
-          Gemini classifies every column — measures, dimensions, dates, flags.
+          The LLM classifies every column — measures, dimensions, dates, flags.
         </p>
 
         <div className="mb-4">
@@ -86,7 +86,7 @@ export default function SemanticsStep({ dasher, isActive, isExpanded, onToggle }
           </button>
           {isLoading && (
             <span className="font-mono text-xs text-neutral-500 animate-pulse">
-              Profiling columns, calling Gemini...
+              Profiling columns, calling LLM...
             </span>
           )}
         </div>

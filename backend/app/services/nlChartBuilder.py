@@ -1,9 +1,8 @@
 import json
-from google import genai
+from app.services.llm import generate
 from app.config import settings
 from app.services.sqlGuard import validate_sql
 
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 NL_CHART_PROMPT = """
 You are a BI analyst building a single Metabase chart from a user's request.
@@ -105,12 +104,8 @@ def build_chart_from_prompt(
         prompt=prompt,
     )
 
-    response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
-        contents=prompt_text,
-    )
-
-    raw = response.text.strip()
+    raw = generate(prompt_text)
+    
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:

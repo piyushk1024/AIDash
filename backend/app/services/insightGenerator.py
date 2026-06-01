@@ -1,9 +1,7 @@
 import json
-from google import genai
+from app.services.llm import generate
 from app.config import settings
 from app.services.sqlGuard import validate_sql
-
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 TURN1_PROMPT = """
@@ -83,18 +81,13 @@ def _build_field_reference(field_map: dict, semantics: dict) -> str:
     )
 
 
-def _call_gemini(prompt: str) -> dict:
-    response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
-        contents=prompt,
-    )
-    raw = response.text.strip()
+def _call_llm(prompt: str) -> dict:
+    raw = generate(prompt)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
     return json.loads(raw)
-
 
 def generate_insights(
     table_name: str,
@@ -114,7 +107,7 @@ def generate_insights(
         prompt=prompt,
     )
 
-    result = _call_gemini(turn1)
+    result = _call_llm(turn1)
 
     if result.get("mode") == "query":
         sql = result["sql"]
@@ -125,6 +118,6 @@ def generate_insights(
             prompt=prompt,
             query_results=json.dumps(query_results, indent=2),
         )
-        result = _call_gemini(turn2)
+        result = _call_llm(turn2)
 
     return result

@@ -1,9 +1,8 @@
 import json
-from google import genai
+from app.services.llm import generate
 from app.schemas.semantics import InferSemanticsResponse
 from app.config import settings
 
-client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 
 def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = None):
@@ -54,14 +53,7 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     Confidence is a float between 0 and 1.
     Do not include any explanation or markdown. Return raw JSON only.
     """
-    response = client.models.generate_content(
-        # model="gemini-2.5-flash-lite",
-        model="gemini-3.1-flash-lite",
-        contents=prompt,
-    )
-
-    # Strip markdown code fences if present
-    raw = response.text.strip()
+    raw = generate(prompt)
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

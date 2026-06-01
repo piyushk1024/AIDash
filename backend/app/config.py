@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     model_config = ConfigDict(env_file=".env")
     
     UPLOAD_DIR: Path #= Path("app/uploads")
-    GEMINI_API_KEY: str
+    LLM_API_KEY: str
+    LLM_MODEL: str = "gemini/gemini-3.1-flash-lite"
+    # GEMINI_API_KEY: str
     DATABASE_URL: str
     METABASE_URL: str
     METABASE_USERNAME: str
