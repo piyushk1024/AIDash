@@ -18,20 +18,19 @@ delete charts in natural language after the fact.
 
 Getting from raw data to a useful dashboard means manually mapping columns,
 choosing chart types, and configuring a BI tool.
-Dasher automates this: it profiles the dataset statistically, uses an LLM to
-infer what each column means and what questions it can answer, then constructs
-and deploys charts programmatically via the Metabase API, and keeps the
-dashboard editable via natural language after creation.
+Dasher automates this end to end: statistical profiling, LLM-powered semantic
+inference, programmatic chart construction and deployment via the Metabase API,
+and natural language authoring after the fact. Zero manual configuration at any stage.
 
 ---
 
 ## Pipeline
 
 1. Upload a CSV
-2. Automatic statistical profiling (stats, value counts, correlations, grouped stats)
+2. Automatic statistical profiling: stats, value counts, correlations, grouped stats
 3. Gemini classifies every column: dimensions, measures, dates, flags, identifiers
 4. Two-pass dashboard planning: analytical questions first, then charts
-5. Charts created in Metabase via API, dashboard embedded in the UI
+5. PostgreSQL-native charts created in Metabase via API, embedded in the UI
 6. Natural language authoring: add, edit, or delete charts by describing what you want
 7. Natural language insight engine for follow-up questions against live data
 
@@ -41,18 +40,24 @@ dashboard editable via natural language after creation.
 
 ### Key decisions
 
+**SQL generation, not query abstraction**
+Dasher generates raw PostgreSQL directly via the Metabase native query API.
+This unlocks the full SQL surface: window functions, CTEs, percentiles,
+HAVING, derived metrics, top-N ranking, with no query language intermediary
+constraining what can be expressed. All LLM-generated SQL passes through a
+validation guard before execution.
+
 **Hallucination risk contained by design**
-The LLM produces an intent dict describing what to query. Python constructs
-the Metabase query language (MBQL) from that intent using persisted field map
-lookups. The LLM never touches the database directly. Query construction is
-deterministic and independently debuggable.
+The LLM generates SQL. Python validates and executes it via persisted field
+map lookups. The LLM never touches the database directly. Validation is
+deterministic and independently debuggable. Invalid SQL is rejected before
+it reaches Metabase.
 
 **Privacy and cost optimisation built into the insight flow**
 The natural language insight engine runs in two turns. Turn 1 classifies
 whether the question can be answered from cached profile statistics or needs
-a live query. In stats mode, no row-level data leaves the system. Query mode
-is user-initiated. Both the privacy boundary and the cost saving are
-structural, not incidental.
+a live query. In stats mode, no row-level data leaves the system. Both the
+privacy boundary and the cost saving are structural, not incidental.
 
 **Dataset-agnostic from day one**
 Every dataset gets its own metadata record in Postgres after upload: Metabase
@@ -73,14 +78,20 @@ orphaned cards or state drift.
 Chart creation failures are caught at two levels: Python-level API failures
 and Metabase rendering failures on successfully created cards. Both trigger
 an automated Gemini-powered heal cycle. Healed charts are flagged with a
-before/after diff in the UI. Charts that can't be healed are dropped cleanly
+before/after diff in the UI. Charts that cannot be healed are dropped cleanly
 with a diagnostic summary.
 
 **Natural language dashboard authoring**
 After a dashboard is built, charts can be added, edited, or deleted by
-typing a description. Each instruction goes through the same Gemini →
-MBQL and self-healing pipeline as the original build. Card IDs are persisted
+typing a description. Each instruction goes through the same Gemini to SQL
+and self-healing pipeline as the original build. Card IDs are persisted
 back into the dashboard plan so edits survive rehydration.
+
+**Statistical profiling over raw row passing**
+The LLM receives a statistical summary of the dataset: means, distributions,
+value counts, correlations, rather than raw rows. Token usage is O(columns),
+not O(rows). Validated at ~8x lower token cost than naive row-passing with
+equivalent semantic inference quality.
 
 ### Architecture diagram
 
@@ -90,25 +101,19 @@ back into the dashboard plan so edits survive rehydration.
 
 ## Decisions and tradeoffs
 
-**Heterogeneous column aggregation**
-Some columns mix units in a single field (e.g. runs and wickets in cricket
-data). Aggregating these without filtering by a sibling categorical is
-semantically meaningless. Schema fields, prompt handling, and MBQL filter
-construction are built; this was scoped out of the initial release due to
-LLM prompt compliance being insufficiently reliable for production use.
+**Native SQL over query abstraction**
+Earlier versions used MBQL, Metabase's internal query language, constructed
+programmatically from an LLM-generated intent dict. This was replaced with
+direct PostgreSQL generation: simpler architecture, full SQL expressiveness,
+and no translation layer between what the LLM wants to express and what gets
+executed. The intent dict and MBQL construction layer were removed entirely.
 
 **Privacy-maximalist insight mode**
-An architecture where Gemini generates MBQL plus a response template with
+An architecture where Gemini generates SQL plus a response template with
 placeholders, with FastAPI filling values locally, was evaluated and
 deliberately deprioritised. It breaks for queries where the insight shape
 depends on seeing the data. User capability was weighted over the marginal
 privacy gain.
-
-**Statistical profiling over raw row passing**
-The LLM receives a statistical summary of the dataset (means, distributions,
-value counts, correlations) rather than raw rows. Token usage is O(columns),
-not O(rows). Validated at ~8x lower token cost than naive row-passing with
-equivalent semantic inference quality.
 
 ---
 
@@ -119,33 +124,36 @@ equivalent semantic inference quality.
 - Gemini semantic inference with confidence scores, cached to Postgres
 - Two-pass dashboard planning: questions first, charts second, with post-planning
   validation and deduplication
-- Metabase chart auto-creation via API, idempotent rebuild
+- PostgreSQL-native chart creation via Metabase API, idempotent rebuild
+- Full SQL capability: window functions, CTEs, percentiles, HAVING, derived metrics
 - Two-stage self-healing chart creation with Gemini, healed/failed diff in UI
 - Public dashboard URL generation and iframe embedding
 - Natural language dashboard authoring: add, edit, and delete charts post-build
-- Natural language insight engine: two-turn Gemini flow, MBQL builder,
+- Natural language insight engine: two-turn Gemini flow, SQL execution,
   insight history with persistence and delete
 - Dataset picker with full rehydration from prior session state
-- Validated across three structurally distinct datasets: mall operations,
-  Diwali sales (Indian retail, comma-formatted numbers), IPL deliveries (~260K rows)
+- Validated across five structurally distinct datasets: Mall operations (synthetic),
+  Flipkart Diwali sales, IPL deliveries (~260K rows)
 
 ---
 
 ## Roadmap
 
 **Features**
-- [ ] Healing persistence: persist healed/failed card diffs to Postgres, survive rehydration
-- [ ] Audience-aware dashboard planning: CXO, engineering, marketing selector
-  passed into the plan generation prompt
-- [ ] HAVING clause support for post-aggregation filtering in MBQL builder
-- [ ] Heterogeneous column support: per-value chart generation for mixed-unit columns
-
-**Infrastructure**
 - [ ] MCP server exposure: Dasher pipeline as an MCP server for Claude Desktop
   and other MCP clients
-- [ ] Cloud deployment and auth
+- [ ] Audience-aware dashboard planning: CXO, engineering, marketing selector
+  passed into the plan generation prompt
+- [ ] Proactive insight suggestions: autonomous post-build insight generation
+  with no user input required
+- [ ] Natural language filter: rewrite all dashboard chart SQLs simultaneously
+  from a single NL instruction
 - [ ] UI overhaul: layout polish, iframe placement, back navigation
-- [ ] Async I/O: replace requests + psycopg2 with httpx + asyncpg for concurrent load handling
+
+**Infrastructure**
+- [ ] Async I/O: replace requests + psycopg2 with httpx + asyncpg
+- [ ] Cloud deployment and auth
+
 
 ---
 
@@ -171,7 +179,8 @@ equivalent semantic inference quality.
 
 ## Validation
 
-Chart and insight accuracy tested across 3 datasets. See [validation.md](validation.md) for full results.
+Chart and insight accuracy tested across 5 datasets including IPL deliveries
+at 260K rows. See [validation.md](validation.md) for full results.
 
 ---
 
@@ -211,5 +220,5 @@ Chart and insight accuracy tested across 3 datasets. See [validation.md](validat
 
 ## Status
 
-MVP complete and actively extended. Pipeline is end-to-end functional,
-validated across multiple datasets, and shipping new capabilities.
+Production-ready MVP, actively extended. End-to-end functional and validated
+across five datasets. New capabilities shipping continuously.
