@@ -1,12 +1,11 @@
-# routes/nlDashboardRoute.py
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.services.database import (
     get_cached_semantics,
     get_dataset_metadata,
     get_cached_dashboard_plan,
     update_dashboard_plan,
+    get_dataset_owner
 )
 from app.services.profiler import profile_csv
 from app.services.nlChartBuilder import build_chart_from_prompt
@@ -18,6 +17,7 @@ from app.services.metabaseClient import (
     get_dashboard_card_ids,
     delete_card,
 )
+from app.dependencies import get_db, get_http_client, get_app_state, require_editor
 from app.config import settings
 
 router = APIRouter()
@@ -29,7 +29,7 @@ class NLChartRequest(BaseModel):
     selected_columns: list[str] = []
 
 
-def _fetch_profile_if_needed(dataset_id: str, selected_columns: list[str]) -> dict | None:
+async def _fetch_profile_if_needed(dataset_id: str, selected_columns: list[str]) -> dict | None:
     if not selected_columns:
         return None
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
@@ -38,12 +38,16 @@ def _fetch_profile_if_needed(dataset_id: str, selected_columns: list[str]) -> di
     return profile_csv(matches[0], dataset_id)
 
 
-def _get_common_deps(dataset_id: str) -> tuple:
-    semantics = get_cached_semantics(dataset_id)
+async def _get_common_deps(db, dataset_id: str, user_id: str) -> tuple:
+    semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
         raise HTTPException(status_code=404, detail="No semantics found. Run inference first.")
+    
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    metadata = get_dataset_metadata(dataset_id)
+    metadata = await get_dataset_metadata(db, dataset_id)
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset metadata not found.")
 
@@ -51,25 +55,29 @@ def _get_common_deps(dataset_id: str) -> tuple:
     if not dashboard_id:
         raise HTTPException(status_code=404, detail="No dashboard found. Build dashboard first.")
 
-    plan = get_cached_dashboard_plan(dataset_id)
+    plan = await get_cached_dashboard_plan(db, dataset_id)
     if not plan:
         raise HTTPException(status_code=404, detail="No dashboard plan found.")
 
     return semantics, metadata, dashboard_id, plan
 
 
-# ── Ask: NL → new chart → append to dashboard ──────────────────
-
 @router.post("/datasets/{dataset_id}/dashboard/charts")
-async def add_nl_chart(dataset_id: str, body: NLChartRequest):
-
-    semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
+async def add_nl_chart(
+    dataset_id: str,
+    body: NLChartRequest,
+    db=Depends(get_db),
+    http_client=Depends(get_http_client),
+    app_state=Depends(get_app_state),
+    current_user=Depends(require_editor),
+):
+    semantics, metadata, dashboard_id, plan = await _get_common_deps(db, dataset_id, current_user.user_id)
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = _fetch_profile_if_needed(dataset_id, body.selected_columns)
-    
-    chart_spec = build_chart_from_prompt(
+    profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
+
+    chart_spec = await build_chart_from_prompt(
         prompt=body.prompt,
         field_map=field_map,
         semantics=semantics,
@@ -78,36 +86,40 @@ async def add_nl_chart(dataset_id: str, body: NLChartRequest):
         profile=profile,
     )
 
-    token = get_session_token()
-    database_id = get_database_id(token)
-    position = len(get_dashboard_card_ids(token, dashboard_id))
+    token = await get_session_token(http_client, app_state)
+    database_id = await get_database_id(token, http_client)
+    position = len(await get_dashboard_card_ids(token, http_client, dashboard_id))
 
-    result, error = create_card_with_healing(token, chart_spec, field_map, database_id)
+    result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
     if error:
         raise HTTPException(status_code=500, detail=error)
 
-    add_card_to_dashboard(token, dashboard_id, result["card_id"], position)
+    await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
 
-    # Append to plan so rebuild includes this card
     new_chart_entry = {**chart_spec, "card_id": result["card_id"]}
     updated_plan = {**plan, "charts": plan["charts"] + [new_chart_entry]}
-    update_dashboard_plan(dataset_id, updated_plan)
+    await update_dashboard_plan(db, dataset_id, updated_plan)
 
     return result
 
 
-# ── Edit: NL instruction → update existing card ─────────────────
-
 @router.put("/datasets/{dataset_id}/dashboard/charts/{card_id}")
-async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
-
-    semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
+async def edit_nl_chart(
+    dataset_id: str,
+    card_id: int,
+    body: NLChartRequest,
+    db=Depends(get_db),
+    http_client=Depends(get_http_client),
+    app_state=Depends(get_app_state),
+    current_user=Depends(require_editor),
+):
+    semantics, metadata, dashboard_id, plan = await _get_common_deps(db, dataset_id, current_user.user_id)
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = _fetch_profile_if_needed(dataset_id, body.selected_columns)
+    profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
 
-    chart_spec = build_chart_from_prompt(
+    chart_spec = await build_chart_from_prompt(
         prompt=body.prompt,
         field_map=field_map,
         semantics=semantics,
@@ -116,19 +128,18 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
         profile=profile,
     )
 
-    token = get_session_token()
-    database_id = get_database_id(token)
+    token = await get_session_token(http_client, app_state)
+    database_id = await get_database_id(token, http_client)
 
-    delete_card(token, card_id)
-    position = len(get_dashboard_card_ids(token, dashboard_id))
+    await delete_card(token, http_client, card_id)
+    position = len(await get_dashboard_card_ids(token, http_client, dashboard_id))
 
-    result, error = create_card_with_healing(token, chart_spec, field_map, database_id)
+    result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
     if error:
         raise HTTPException(status_code=500, detail=error)
 
-    add_card_to_dashboard(token, dashboard_id, result["card_id"], position)
+    await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
 
-    # Swap old card entry in plan with updated spec + new card_id
     updated_charts = [
         {**chart_spec, "card_id": result["card_id"]}
         if c.get("card_id") == card_id
@@ -136,20 +147,27 @@ async def edit_nl_chart(dataset_id: str, card_id: int, body: NLChartRequest):
         for c in plan["charts"]
     ]
     updated_plan = {**plan, "charts": updated_charts}
-    update_dashboard_plan(dataset_id, updated_plan)
+    await update_dashboard_plan(db, dataset_id, updated_plan)
 
     return result
 
-#----------Delete card functionality---------
-@router.delete("/datasets/{dataset_id}/dashboard/charts/{card_id}")
-async def delete_nl_chart(dataset_id: str, card_id: int):
-    semantics, metadata, dashboard_id, plan = _get_common_deps(dataset_id)
 
-    token = get_session_token()
-    delete_card(token, card_id)
+@router.delete("/datasets/{dataset_id}/dashboard/charts/{card_id}")
+async def delete_nl_chart(
+    dataset_id: str,
+    card_id: int,
+    db=Depends(get_db),
+    http_client=Depends(get_http_client),
+    app_state=Depends(get_app_state),
+    current_user=Depends(require_editor),
+):
+    semantics, metadata, dashboard_id, plan = await _get_common_deps(db, dataset_id, current_user.user_id)
+
+    token = await get_session_token(http_client, app_state)
+    await delete_card(token, http_client, card_id)
 
     updated_charts = [c for c in plan["charts"] if c.get("card_id") != card_id]
     updated_plan = {**plan, "charts": updated_charts}
-    update_dashboard_plan(dataset_id, updated_plan)
+    await update_dashboard_plan(db, dataset_id, updated_plan)
 
     return {"deleted": card_id}

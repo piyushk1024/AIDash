@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+from app.dependencies import get_db, require_editor
 from app.services.database import (
     get_cached_semantics,
     get_cached_dashboard_plan,
     persist_dashboard_plan,
     get_dataset_metadata,
+    get_dataset_owner
 )
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
@@ -40,13 +42,19 @@ def validate_and_clean_charts(charts: list) -> list:
 
 
 @router.post("/generate-dashboard-plan/{dataset_id}")
-async def generate_plan(dataset_id: str):
+async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depends(require_editor)):
 
-    cached = get_cached_dashboard_plan(dataset_id)
+
+    owner = await get_dataset_owner(db, dataset_id)    
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+    cached = await get_cached_dashboard_plan(db, dataset_id)
     if cached:
         return cached
+    
 
-    semantics = get_cached_semantics(dataset_id)
+
+    semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
         raise HTTPException(
             status_code=404,
@@ -58,11 +66,11 @@ async def generate_plan(dataset_id: str):
         raise HTTPException(status_code=404, detail="Dataset file not found")
     profile = profile_csv(matches[0], dataset_id)
 
-    metadata = get_dataset_metadata(dataset_id)
+    metadata = await get_dataset_metadata(db, dataset_id)
     field_map = metadata["field_map"] if metadata else {}
     table_name = metadata["table_name"] if metadata else ""
 
-    plan = generate_dashboard_plan(dataset_id, semantics, profile, table_name, field_map)
+    plan = await generate_dashboard_plan(dataset_id, semantics, profile, table_name, field_map)
 
     plan["charts"] = validate_and_clean_charts(plan["charts"])
 
@@ -72,5 +80,5 @@ async def generate_plan(dataset_id: str):
             detail="No valid charts could be generated. Try re-running semantics inference.",
         )
 
-    persist_dashboard_plan(dataset_id, plan)
+    await persist_dashboard_plan(db, dataset_id, plan)
     return plan

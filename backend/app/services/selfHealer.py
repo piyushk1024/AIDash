@@ -32,7 +32,7 @@ Rules:
 Corrected chart:
 """
 
-def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
+async def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
     field_reference = "\n".join(
         f"  - {col}: {meta['base_type']}"
         for col, meta in field_map.items()
@@ -44,7 +44,7 @@ def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
         field_reference=field_reference
     )
 
-    raw = generate(prompt)
+    raw = await generate(prompt)
     
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()

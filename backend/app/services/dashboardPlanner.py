@@ -110,7 +110,7 @@ Aim for 5 to 7 charts. Raw JSON only, no markdown.
 """
 
 
-def generate_dashboard_plan(
+async def generate_dashboard_plan(
     dataset_id: str,
     semantics: dict,
     profile: dict,
@@ -136,7 +136,7 @@ def generate_dashboard_plan(
         profile_summary=json.dumps(profile_summary, indent=2),
     )
 
-    raw = generate(prompt)
+    raw = await generate(prompt)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:

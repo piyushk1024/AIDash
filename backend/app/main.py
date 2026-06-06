@@ -1,10 +1,31 @@
+# app/main.py
+from contextlib import asynccontextmanager
+import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import uploadsRoute, profilerRoute, semanticsRoute, dashboardRoute, metabaseRoute,cleanupRoute,datasetsRoute, insightsRoute, nlDashboardRoute
+from app.services.database import create_pool
+from app.routes import (
+    uploadsRoute, profilerRoute, semanticsRoute,
+    dashboardRoute, metabaseRoute, cleanupRoute,
+    datasetsRoute, insightsRoute, nlDashboardRoute,
+    authroute
+)
 
-# from app.schemas import semantics
 
-app = FastAPI(title="AI Dashboard MVP")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    app.state.db_pool = await create_pool()
+    app.state.http_client = httpx.AsyncClient()
+    app.state.metabase_token = None
+    app.state.metabase_token_expires = 0.0
+    yield
+    # Shutdown
+    await app.state.db_pool.close()
+    await app.state.http_client.aclose()
+
+
+app = FastAPI(title="AI Dashboard MVP", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,4 +43,4 @@ app.include_router(metabaseRoute.router)
 app.include_router(insightsRoute.router)
 app.include_router(cleanupRoute.router)
 app.include_router(nlDashboardRoute.router)
-
+app.include_router(authroute.router)

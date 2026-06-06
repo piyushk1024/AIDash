@@ -1,16 +1,18 @@
 from pathlib import Path
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from app.config import settings
 from app.services.profiler import profile_csv
+from app.dependencies import get_current_user
+
+
 
 router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
 
 @router.get("/profile-csv/{dataset_id}")
-def profile_csv_route(dataset_id: str):
+async def profile_csv_route(dataset_id: str, current_user=Depends(get_current_user)):
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    
-    file_path = matches[0]
-    return profile_csv(file_path, dataset_id)
+
+    return profile_csv(matches[0], dataset_id)

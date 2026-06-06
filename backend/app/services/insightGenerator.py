@@ -1,6 +1,6 @@
 import json
 from app.services.llm import generate
-from app.config import settings
+# from app.config import settings
 from app.services.sqlGuard import validate_sql
 
 
@@ -81,15 +81,15 @@ def _build_field_reference(field_map: dict, semantics: dict) -> str:
     )
 
 
-def _call_llm(prompt: str) -> dict:
-    raw = generate(prompt)
+async def _call_llm(prompt: str) -> dict:
+    raw = await generate(prompt)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
     return json.loads(raw)
 
-def generate_insights(
+async def generate_insights(
     table_name: str,
     table_id: int,
     database_id: int,
@@ -107,7 +107,7 @@ def generate_insights(
         prompt=prompt,
     )
 
-    result = _call_llm(turn1)
+    result = await _call_llm(turn1)
 
     if result.get("mode") == "query":
         sql = result["sql"]
@@ -118,6 +118,6 @@ def generate_insights(
             prompt=prompt,
             query_results=json.dumps(query_results, indent=2),
         )
-        result = _call_llm(turn2)
+        result = await _call_llm(turn2)
 
     return result

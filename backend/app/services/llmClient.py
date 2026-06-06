@@ -1,11 +1,11 @@
 import json
 from app.services.llm import generate
 from app.schemas.semantics import InferSemanticsResponse
-from app.config import settings
+# from app.config import settings
 
 
 
-def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = None):
+async def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = None) -> InferSemanticsResponse:
 
     hint_line = f"Business context: {business_hint}" if business_hint else ""
 
@@ -53,7 +53,7 @@ def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = 
     Confidence is a float between 0 and 1.
     Do not include any explanation or markdown. Return raw JSON only.
     """
-    raw = generate(prompt)
+    raw = await generate(prompt)
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

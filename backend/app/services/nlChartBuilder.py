@@ -80,7 +80,7 @@ def _build_column_profile(selected_columns: list[str], profile: dict) -> str:
     return "\n".join(lines)
 
 
-def build_chart_from_prompt(
+async def build_chart_from_prompt(
     prompt: str,
     field_map: dict,
     semantics: dict,
@@ -104,7 +104,7 @@ def build_chart_from_prompt(
         prompt=prompt,
     )
 
-    raw = generate(prompt_text)
+    raw = await generate(prompt_text)
     
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()

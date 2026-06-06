@@ -1,5 +1,6 @@
-from fastapi import APIRouter, HTTPException
-from app.services.database import get_dataset_state
+from fastapi import APIRouter, HTTPException, Depends
+from app.dependencies import get_current_user,get_db
+from app.services.database import get_dataset_state, get_dataset_owner
 from app.config import settings
 
 router = APIRouter()
@@ -7,10 +8,13 @@ router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
 
 @router.get("/datasets/{dataset_id}/state")
-def get_state(dataset_id: str):
-    state = get_dataset_state(dataset_id)
+async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(get_current_user)):
+    state = await get_dataset_state(db, dataset_id)
     if not state:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     metadata = state["metadata"]
 
