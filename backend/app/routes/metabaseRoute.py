@@ -96,6 +96,7 @@ async def create_metabase_dashboard(
         "dashboard_id": dashboard_id,
         "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",
         "public_url": public_url,
+        "published": False,  
         "cards_created": len(created_cards),
         "cards": created_cards,
         "errors": errors,

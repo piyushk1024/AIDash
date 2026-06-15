@@ -132,7 +132,7 @@ async def get_dataset_metadata(pool: asyncpg.Pool, dataset_id: str):
         row = await conn.fetchrow(
             """
             SELECT table_name, metabase_table_id, field_map,
-                   metabase_dashboard_id, public_url, user_id
+                   metabase_dashboard_id, public_url, user_id, published
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -304,3 +304,28 @@ async def get_dataset_owner(pool: asyncpg.Pool, dataset_id: str) -> str | None:
         dataset_id,
     )
     return row["user_id"] if row else None
+
+# ── Publish ───────────────────────────────────────────────────
+
+async def get_published_dashboard(pool: asyncpg.Pool, dataset_id: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT public_url, published
+            FROM dataset_metadata
+            WHERE dataset_id = $1
+            """,
+            dataset_id,
+        )
+        return dict(row) if row else None
+
+async def set_published(pool: asyncpg.Pool, dataset_id: str, published: bool):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE dataset_metadata
+            SET published = $1
+            WHERE dataset_id = $2
+            """,
+            published, dataset_id,
+        )

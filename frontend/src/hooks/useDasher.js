@@ -170,6 +170,17 @@ function replaceCard(cardId, card) {
   }))
 }
 
+function removeCard(cardId) {
+  setDashboardResult(prev => ({
+    ...prev,
+    cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
+    cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
+  }))
+}
+function setDashboardPublished(value) {
+  setDashboardResult(prev => ({ ...prev, published: value }))
+}
+
   // Everything a component might need, returned as one object
   return {
     // Data
@@ -191,6 +202,8 @@ function replaceCard(cardId, card) {
     resolveConflict,
     reset,
     addCard,
-    replaceCard
+    replaceCard,
+    removeCard,
+    setDashboardPublished
   };
 }

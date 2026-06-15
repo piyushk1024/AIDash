@@ -31,4 +31,4 @@ async def login(body: LoginRequest, db=Depends(get_db)):
         # Same error for both cases — don't reveal whether the username exists
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token(user["user_id"], user["username"], user["role"])
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "username": user["username"],"role": user["role"],}

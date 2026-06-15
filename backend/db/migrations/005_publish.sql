@@ -1,0 +1,2 @@
+ALTER TABLE dataset_metadata
+ADD COLUMN IF NOT EXISTS published BOOLEAN DEFAULT false;

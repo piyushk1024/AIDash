@@ -15,7 +15,7 @@ async def delete_dataset_by_id(dataset_id: str,
                                http_client=Depends(get_http_client),
                                app_state=Depends(get_app_state),
                                current_user=Depends(require_editor)):
-    metadata = await get_dataset_metadata(dataset_id)
+    metadata = await get_dataset_metadata(db, dataset_id)
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset not found")
     
@@ -29,7 +29,7 @@ async def delete_dataset_by_id(dataset_id: str,
         try:
             token = await get_session_token(http_client, app_state)
             card_ids = await get_dashboard_card_ids(token, http_client, dashboard_id)
-            await delete_dashboard(token, dashboard_id)
+            await delete_dashboard(token, http_client, dashboard_id)
             for card_id in card_ids:
                 await delete_card(token, http_client, card_id)
         except Exception as e:
@@ -41,6 +41,6 @@ async def delete_dataset_by_id(dataset_id: str,
         f.unlink(missing_ok=True)
 
     # Delete Postgres table and all metadata rows
-    await delete_dataset(dataset_id, metadata["table_name"])
+    await delete_dataset(db, dataset_id, metadata["table_name"])
 
     return {"deleted": dataset_id}

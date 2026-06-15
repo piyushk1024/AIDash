@@ -105,16 +105,17 @@ async def load_csv_to_postgres(
         for row in rows
     ]
 
-    placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
-    col_names    = ", ".join(f'"{c}"' for c in columns)
+    # placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
+    # col_names    = ", ".join(f'"{c}"' for c in columns)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
             await conn.execute(f'CREATE TABLE "{table_name}" ({col_definitions})')
-            await conn.executemany(
-                f'INSERT INTO "{table_name}" ({col_names}) VALUES ({placeholders})',
-                tuples,
+            await conn.copy_records_to_table(
+                table_name,
+                records=tuples,
+                columns=columns,
             )
 
     return {

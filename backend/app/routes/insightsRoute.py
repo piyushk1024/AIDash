@@ -87,8 +87,10 @@ async def get_insights(
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return {"insights": await get_insights_for_dataset(db, dataset_id)}
-
 
 @router.delete("/datasets/{dataset_id}/insights/{insight_id}")
 async def delete_insight_entry(
@@ -97,5 +99,8 @@ async def delete_insight_entry(
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     await delete_insight(db, dataset_id, insight_id)
     return {"deleted": insight_id}

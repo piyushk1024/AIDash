@@ -112,7 +112,7 @@ async def generate_insights(
     if result.get("mode") == "query":
         sql = result["sql"]
         validate_sql(sql, context="insight query")
-        query_results = execute_sql_fn(sql)
+        query_results = await execute_sql_fn(sql)
 
         turn2 = TURN2_PROMPT.format(
             prompt=prompt,

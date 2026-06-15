@@ -1,19 +1,52 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import InsightsPanel from './InsightsPanel'
 import { api } from '../../lib/api'
 
 export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }) {
-  const { createDashboard, status, errors, dashboardResult, plan, datasetId 
-    ,uploadResult, addCard, replaceCard,
+  const {
+    createDashboard, status, errors, dashboardResult, plan, datasetId,
+    uploadResult, addCard, replaceCard, removeCard, setDashboardPublished
   } = dasher
+
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [iframekey,setIframekey] = useState(false)
+  const [iframeKey, setIframeKey] = useState(false)
+  // const [published, setPublished] = useState(false)
+  const [publishing, setPublishing] = useState(false)
+  const [published, setPublished] = useState(dashboardResult?.published ?? false)
+  const [copyLabel, setCopyLabel] = useState('Copy share link')
+
   const isLoading = status.dashboard === 'loading'
   const isDone = status.dashboard === 'done'
   const fieldMap = uploadResult?.field_map ?? {}
 
-  function bumpIframe() { setIframekey (k => !k) }
+  function bumpIframe() { setIframeKey(k => !k) }
 
+  // useEffect(() => {
+  //   if (dashboardResult?.published !== undefined) {
+  //     setPublished(dashboardResult.published ?? false)
+  //   }
+  // }, [dashboardResult])
+
+  async function handlePublishToggle() {
+    setPublishing(true)
+    try {
+      const result = await api.publishDashboard(datasetId)
+      setPublished(result.published)
+      dasher.setDashboardPublished(result.published)
+    } catch (e) {
+      // silently ignore — button reverts to prior state
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  function handleCopyLink() {
+    const url = `${window.location.origin}/share/${datasetId}`
+    navigator.clipboard.writeText(url)
+    setCopyLabel('Copied!')
+    setTimeout(() => setCopyLabel('Copy share link'), 2000)
+  }
+  console.log(dashboardResult) 
   if (isDone && dashboardResult) {
     return (
       <div className="animate-fade-in mt-6">
@@ -29,6 +62,35 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
           >
             {isLoading ? '...' : '[ rebuild ]'}
           </button>
+        </div>
+
+        <div className="flex items-center gap-3 py-2 border-t border-neutral-800">
+          <button
+            onClick={handlePublishToggle}
+            disabled={publishing}
+            className={`px-3 py-1.5 rounded font-mono text-xs tracking-widest uppercase transition-all duration-200 disabled:opacity-50
+              ${published
+                ? 'border border-amber-400/40 text-amber-400 hover:bg-amber-400/10'
+                : 'bg-amber-400 text-neutral-950 hover:bg-amber-300'
+              }`}
+          >
+            {publishing ? '...' : published ? 'Unpublish' : 'Publish'}
+          </button>
+
+          {published && (
+            <button
+              onClick={handleCopyLink}
+              className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors"
+            >
+              {copyLabel}
+            </button>
+          )}
+
+          {published && (
+            <span className="font-mono text-xs text-neutral-600 ml-auto">
+              Public link active
+            </span>
+          )}
         </div>
 
         <div className="flex gap-0 border-b border-neutral-200 dark:border-neutral-800 mt-2">
@@ -55,7 +117,7 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
               Open in Metabase ↗
             </button>
             <iframe
-              key = {iframekey}
+              key={iframeKey}
               src={dashboardResult.public_url}
               title="Metabase Dashboard"
               className="w-full rounded border border-neutral-800"
@@ -70,6 +132,7 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
               cards={dashboardResult.cards ?? []}
               onCardAdded={card => { addCard(card); bumpIframe() }}
               onCardEdited={(cardId, card) => { replaceCard(cardId, card); bumpIframe() }}
+              onCardDeleted={cardId => { removeCard(cardId); bumpIframe() }}
             />
           </div>
         </div>
@@ -142,7 +205,6 @@ function StepHeader({ title }) {
 function HealingSummary({ cards, errors }) {
   const [expanded, setExpanded] = useState(false)
   const healed = cards?.filter(c => c.healed) ?? []
-  const total = healed.length + (errors?.length ?? 0)
 
   return (
     <div className="mt-4 border border-amber-400/30 rounded overflow-hidden">
@@ -161,7 +223,6 @@ function HealingSummary({ cards, errors }) {
 
       {expanded && (
         <div className="border-t border-amber-400/20 px-3 py-3 space-y-4">
-
           {healed.map(c => (
             <div key={c.card_id} className="space-y-1.5">
               <div className="flex items-center gap-2 font-mono text-xs">
@@ -201,7 +262,6 @@ function HealingSummary({ cards, errors }) {
               </div>
             </div>
           ))}
-
         </div>
       )}
     </div>
@@ -374,6 +434,7 @@ function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdite
       setAddLoading(false)
     }
   }
+
   async function handleDelete(cardId) {
     try {
       await api.deleteNLChart(datasetId, cardId)
@@ -416,10 +477,12 @@ function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdded, onCardEdite
                     onDone={updated => { onCardEdited(card.card_id, updated); setEditingCardId(null) }}
                     onCancel={() => setEditingCardId(null)}
                   />
-                : <CardRow 
-                key={card.card_id} card={card} 
-                onEdit={() => setEditingCardId(card.card_id)}
-                onDelete={() => handleDelete(card.card_id)} />
+                : <CardRow
+                    key={card.card_id}
+                    card={card}
+                    onEdit={() => setEditingCardId(card.card_id)}
+                    onDelete={() => handleDelete(card.card_id)}
+                  />
             ))}
           </div>
         )}
