@@ -35,7 +35,9 @@ async def create_card_with_healing(
             )
             healed = True
         except Exception as e2:
-            return None, _error_entry(original_chart, str(e), str(e2))
+            logger.error("Chart '%s' failed permanently. stage1_error=%s, heal_error=%s",
+                        original_chart.get("chart_title"), str(e), str(e2),)
+            return None, _error_entry(original_chart)
 
     # Stage 2 — Metabase render failure
     query_error = await validate_card_query(token, http_client, card["id"])
@@ -53,10 +55,14 @@ async def create_card_with_healing(
             retry_error = await validate_card_query(token, http_client, card["id"])
             if retry_error:
                 await delete_card(token, http_client, card["id"])
-                return None, _error_entry(pre_heal_chart, query_error, retry_error)
+                logger.error("Chart '%s' failed permanently. query_error=%s, retry_error=%s",
+                    pre_heal_chart.get("chart_title"), query_error, retry_error,)
+                return None, _error_entry(pre_heal_chart)
             healed = True
         except Exception as e3:
-            return None, _error_entry(pre_heal_chart, query_error, str(e3))
+            logger.error("Chart '%s' heal raised exception. query_error=%s, exception=%s",
+                         pre_heal_chart.get("chart_title"), query_error, str(e3),)
+            return None, _error_entry(pre_heal_chart)
 
     if healed:
         return _healed_entry(original_chart, chart, card["id"]), None
@@ -92,12 +98,9 @@ def _healed_entry(original: dict, healed: dict, card_id: int) -> dict:
         },
     }
 
-
-def _error_entry(chart: dict, error: str, heal_error: str) -> dict:
+def _error_entry(chart: dict) -> dict:
     return {
         "chart_title": chart.get("chart_title"),
         "chart_type":  chart.get("chart_type"),
-        "sql":         chart.get("sql"),
-        "error":       error,
-        "heal_error":  heal_error,
+        "failed":      True,
     }

@@ -164,7 +164,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
         metadata = await conn.fetchrow(
             """
             SELECT table_name, metabase_table_id, field_map,
-                   metabase_dashboard_id, public_url
+                   metabase_dashboard_id, public_url, published
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,

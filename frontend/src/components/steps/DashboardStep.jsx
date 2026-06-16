@@ -9,10 +9,9 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
   } = dasher
 
   const [activeTab, setActiveTab] = useState('dashboard')
-  const [iframeKey, setIframeKey] = useState(false)
-  // const [published, setPublished] = useState(false)
-  const [publishing, setPublishing] = useState(false)
-  const [published, setPublished] = useState(dashboardResult?.published ?? false)
+  const [iframeKey, setIframeKey] = useState(false)  
+  const [publishing, setPublishing] = useState(false)  
+  const published = dashboardResult?.published ?? false  
   const [copyLabel, setCopyLabel] = useState('Copy share link')
 
   const isLoading = status.dashboard === 'loading'
@@ -21,20 +20,13 @@ export default function DashboardStep({ dasher, isActive, isExpanded, onToggle }
 
   function bumpIframe() { setIframeKey(k => !k) }
 
-  // useEffect(() => {
-  //   if (dashboardResult?.published !== undefined) {
-  //     setPublished(dashboardResult.published ?? false)
-  //   }
-  // }, [dashboardResult])
 
   async function handlePublishToggle() {
     setPublishing(true)
     try {
-      const result = await api.publishDashboard(datasetId)
-      setPublished(result.published)
+      const result = await api.publishDashboard(datasetId)      
       dasher.setDashboardPublished(result.published)
-    } catch (e) {
-      // silently ignore — button reverts to prior state
+    } catch (e) {      
     } finally {
       setPublishing(false)
     }

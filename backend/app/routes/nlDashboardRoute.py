@@ -92,8 +92,8 @@ async def add_nl_chart(
 
     result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
     if error:
-        raise HTTPException(status_code=500, detail=error)
-
+        raise HTTPException(status_code=500,
+                            detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
     await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
 
     new_chart_entry = {**chart_spec, "card_id": result["card_id"]}
@@ -136,7 +136,8 @@ async def edit_nl_chart(
 
     result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
     if error:
-        raise HTTPException(status_code=500, detail=error)
+        raise HTTPException(status_code=500,
+                            detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
 
     await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
 
