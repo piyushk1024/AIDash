@@ -1,13 +1,13 @@
 # Dasher
 
-Upload a CSV. Get a fully configured, interactive dashboard in minutes.
+Upload a CSV. Get a fully configured, interactive, authenticated dashboard in minutes.
 No column mapping. No chart configuration. No BI expertise required.
 
-Dasher profiles your data automatically, infers what each column means,
-and builds and deploys the right charts. It then lets you author, edit, and
-delete charts in natural language after the fact.
+Dasher profiles your data automatically, infers what each column means, builds and
+deploys the right charts, and lets you author, edit, and delete charts in natural
+language after the fact. Dashboards are shareable via a public URL with one click.
 
-**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · LiteLLM · Gemini 3.1 Flash-Lite
+**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · LiteLLM · Gemini 3.1 Flash-Lite · asyncpg · httpx · PyJWT
 
 > Built with Claude as a development accelerator. Architecture decisions,
 > product tradeoffs, and validation are the author's own.
@@ -20,7 +20,8 @@ Getting from raw data to a useful dashboard means manually mapping columns,
 choosing chart types, and configuring a BI tool.
 Dasher automates this end to end: statistical profiling, LLM-powered semantic
 inference, programmatic chart construction and deployment via the Metabase API,
-and natural language authoring after the fact. Zero manual configuration at any stage.
+natural language authoring after the fact, and one-click public sharing.
+Zero manual configuration at any stage.
 
 ---
 
@@ -33,6 +34,7 @@ and natural language authoring after the fact. Zero manual configuration at any 
 5. PostgreSQL-native charts created in Metabase via API, embedded in the UI
 6. Natural language authoring: add, edit, or delete charts by describing what you want
 7. Natural language insight engine for follow-up questions against live data
+8. Publish to a public share URL, or keep private
 
 ---
 
@@ -55,9 +57,9 @@ it reaches Metabase.
 
 **LLM-agnostic by design**
 All LLM calls are routed through a single LiteLLM wrapper. Switching from
-Gemini to GPT-4o or Claude is a one-line config change, no code changes
-anywhere in the pipeline. Provider, model, and API key are all externalised
-to environment variables.
+Gemini to GPT-4o or Claude is a one-line config change with no downstream
+code changes anywhere in the pipeline. Provider, model, and API key are
+all externalised to environment variables.
 
 **Statistical profiling over raw row passing**
 The LLM receives a statistical summary of the dataset: means, distributions,
@@ -68,19 +70,37 @@ not O(rows). Validated across multiple datasets:
 |---|---|---|---|
 | IPL deliveries | 260,920 | 1x vs 4.3x (at 1k rows sampled) | 1x vs 3.5x |
 | API error logs | 220,000 | 1x vs 9.9x (at 1k rows sampled) | 1x vs 8.0x |
-| Metaverse stats | 37 | 1x vs 0.7x | 1x vs 0.8x |
 
-The efficiency advantage is structural and scales with row count. At full
-dataset scale, naive row-passing is impractical. The crossover point is
-around a few hundred rows, beyond that Dasher's profile overhead is
-consistently cheaper and grows at a fraction of the rate. Dashboard
-cost can be as low as $0.002.
+The efficiency advantage is structural and scales with row count. At full dataset
+scale, naive row-passing is impractical. Dashboard cost can be as low as $0.002.
 
 **Privacy and cost optimisation built into the insight flow**
-The natural language insight engine runs in two turns. Turn 1 classifies
-whether the question can be answered from cached profile statistics or needs
-a live query. In stats mode, no row-level data leaves the system. Both the
-privacy boundary and the cost saving are structural, not incidental.
+The natural language insight engine runs in two turns. Turn 1 classifies whether
+the question can be answered from cached profile statistics or requires a live
+query. In stats mode, no row-level data leaves the system. Both the privacy
+boundary and the cost saving are structural, not incidental.
+
+**Auth and ownership built into every layer**
+JWT tokens carry user identity on every request. Dataset ownership is enforced
+at the database layer via a dedicated `get_dataset_owner` helper, not at the
+route layer. Every write route checks ownership after a 404 guard and returns
+403 on mismatch. The dataset list silently filters to the authenticated user.
+Metabase is treated as a rendering layer only. All access control lives in
+Dasher's auth stack.
+
+**Public sharing without exposing internals**
+Published dashboards are served via an open `/datasets/{id}/public` endpoint
+that returns only the Metabase public embed URL. The Metabase dashboard integer
+ID is never exposed. The share URL is a Dasher URL, not a Metabase URL.
+Publishing is a deliberate owner action via a toggle; dashboards are private
+by default.
+
+**Fully async I/O stack**
+All database access runs through an asyncpg connection pool. All HTTP calls
+to Metabase run through an httpx.AsyncClient. Both are initialised in the
+FastAPI lifespan hook on `app.state` and injected via dependency injection.
+The event loop is never blocked. Validated under concurrent load across
+multiple simultaneous dataset pipelines.
 
 **Dataset-agnostic from day one**
 Every dataset gets its own metadata record in Postgres after upload: Metabase
@@ -101,8 +121,7 @@ orphaned cards or state drift.
 Chart creation failures are caught at two levels: Python-level API failures
 and Metabase rendering failures on successfully created cards. Both trigger
 an automated LLM-powered heal cycle. Healed charts are flagged with a
-before/after diff in the UI. Charts that cannot be healed are dropped cleanly
-with a diagnostic summary.
+before/after diff in the UI. Charts that cannot be healed are dropped cleanly.
 
 **Natural language dashboard authoring**
 After a dashboard is built, charts can be added, edited, or deleted by
@@ -125,6 +144,12 @@ direct PostgreSQL generation: simpler architecture, full SQL expressiveness,
 and no translation layer between what the LLM wants to express and what gets
 executed. The intent dict and MBQL construction layer were removed entirely.
 
+**Metabase as a rendering layer, not an auth boundary**
+Metabase's own user and permission system is bypassed deliberately. A single
+service account authenticates with Metabase. All user-level access control
+runs in Dasher's JWT layer. This simplifies the stack and keeps auth logic
+in one place rather than split across two systems.
+
 **Privacy-maximalist insight mode**
 An architecture where the LLM generates SQL plus a response template with
 placeholders, with FastAPI filling values locally, was evaluated and
@@ -142,6 +167,8 @@ small service file. The flexibility gain is permanent.
 
 ## What shipped
 
+- JWT authentication: register, login, token-based session management
+- Per-user dataset ownership enforced at database layer, 403 on mismatch
 - CSV upload with duplicate detection and replace/create-new conflict resolution
 - Automatic profiling: stats, value counts, correlations, grouped stats per column
 - LLM semantic inference with confidence scores, cached to Postgres
@@ -150,18 +177,35 @@ small service file. The flexibility gain is permanent.
 - PostgreSQL-native chart creation via Metabase API, idempotent rebuild
 - Full SQL capability: window functions, CTEs, percentiles, HAVING, derived metrics
 - Two-stage self-healing chart creation with LLM, healed/failed diff in UI
-- Public dashboard URL generation and iframe embedding
+- Public dashboard publishing: owner-controlled toggle, open share endpoint,
+  Dasher-native share URL
 - Natural language dashboard authoring: add, edit, and delete charts post-build
 - Natural language insight engine: two-turn LLM flow, SQL execution,
   insight history with persistence and delete
+- Fully async I/O: asyncpg connection pool, httpx.AsyncClient, lifespan-managed
 - Dataset picker with full rehydration from prior session state
 - LLM-agnostic via LiteLLM: swap provider with a single config change
-- Validated across five structurally distinct datasets: Mall operations (synthetic),
-  Flipkart Diwali sales, IPL deliveries (~260K rows), API error logs (~220K rows)
+- Validated across five structurally distinct datasets: Mall operations,
+  Flipkart Diwali sales, IPL deliveries (~260K rows), API error logs (~220K rows),
+  Cars and employee datasets
 
 ---
 
 ## Roadmap
+
+**Done**
+- [x] Async I/O: asyncpg + httpx, lifespan-managed pool and client
+- [x] JWT auth and per-user dataset ownership
+- [x] Public share and publish
+- [x] Natural language dashboard authoring
+- [x] Natural language insight engine
+- [x] LiteLLM abstraction
+
+**Next**
+- [ ] UI overhaul: sidebar pipeline layout, per-card iframe grid, component decomposition
+- [ ] Cloud deployment: Railway, S3/R2 for CSV storage, cold-start seeding
+- [ ] Security hardening: server-side Metabase iframe proxy, permissions lockdown,
+  endpoint audit
 
 **Features**
 - [ ] MCP server exposure: Dasher pipeline as an MCP server for Claude Desktop
@@ -169,42 +213,39 @@ small service file. The flexibility gain is permanent.
 - [ ] Audience-aware dashboard planning: CXO, engineering, marketing selector
   passed into the plan generation prompt
 - [ ] Proactive insight suggestions: autonomous post-build insight generation
-  with no user input required
-- [ ] Natural language filter: rewrite all dashboard chart SQLs simultaneously
-  from a single NL instruction
-- [ ] UI overhaul: layout polish, iframe placement, back navigation
-
-**Infrastructure**
-- [ ] Async I/O: replace requests + psycopg2 with httpx + asyncpg
-- [ ] Cloud deployment and auth
+- [ ] Natural language filter: rewrite all dashboard chart SQLs from a single instruction
 
 ---
 
 ## API reference
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/upload-csv` | Upload CSV, load to Postgres, sync Metabase, persist field map |
-| GET | `/datasets` | List uploaded datasets |
-| DELETE | `/datasets/{id}` | Delete dataset, Metabase dashboard, and all records |
-| GET | `/datasets/{id}/state` | Full pipeline state for frontend rehydration |
-| POST | `/infer-dataset-semantics/{id}` | Profile and LLM semantic inference, cached to Postgres |
-| POST | `/generate-dashboard-plan/{id}` | Two-pass LLM dashboard plan with validation |
-| POST | `/create-metabase-dashboard/{id}` | Idempotent dashboard and card creation with self-healing |
-| POST | `/datasets/{id}/dashboard/charts` | Add a chart via natural language |
-| PUT | `/datasets/{id}/dashboard/charts/{card_id}` | Edit a chart via natural language |
-| DELETE | `/datasets/{id}/dashboard/charts/{card_id}` | Delete a chart |
-| POST | `/datasets/{id}/insights` | Two-turn NL insight generation |
-| GET | `/datasets/{id}/insights` | Insight history |
-| DELETE | `/datasets/{id}/insights/{insight_id}` | Delete insight entry |
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| POST | `/auth/register` | Open | Create account, returns user\_id and role |
+| POST | `/auth/login` | Open | Returns JWT access\_token |
+| POST | `/upload-csv` | Required | Upload CSV, load to Postgres, sync Metabase |
+| GET | `/datasets` | Required | List datasets for authenticated user |
+| DELETE | `/datasets/{id}` | Required | Delete dataset, dashboard, and all records |
+| GET | `/datasets/{id}/state` | Required | Full pipeline state for rehydration |
+| GET | `/datasets/{id}/public` | Open | Public embed URL if published, 404 otherwise |
+| POST | `/datasets/{id}/publish` | Required | Toggle published state |
+| POST | `/infer-dataset-semantics/{id}` | Required | LLM semantic inference, cached |
+| POST | `/generate-dashboard-plan/{id}` | Required | Two-pass LLM dashboard plan |
+| POST | `/create-metabase-dashboard/{id}` | Required | Idempotent dashboard creation with self-healing |
+| POST | `/datasets/{id}/dashboard/charts` | Required | Add chart via natural language |
+| PUT | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Edit chart via natural language |
+| DELETE | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Delete chart |
+| POST | `/datasets/{id}/insights` | Required | Two-turn NL insight generation |
+| GET | `/datasets/{id}/insights` | Required | Insight history |
+| DELETE | `/datasets/{id}/insights/{insight_id}` | Required | Delete insight entry |
 
 ---
 
 ## Validation
 
 Chart and insight accuracy tested across 5 datasets including IPL deliveries
-at 260K rows. Cost efficiency validated via `costValidation.py` across 3 datasets
-at varying scales. See [validation.md](validation.md) for full results.
+at 260K rows. 14/17 chart accuracy across 3 datasets. Cost efficiency validated
+via `costValidation.py` across 3 datasets at varying scales.
 
 ---
 
@@ -223,7 +264,7 @@ at varying scales. See [validation.md](validation.md) for full results.
 2. Create and activate a Python virtual environment
 3. `pip install -r requirements.txt`
 4. Copy `.env.example` to `.env` and fill in values
-5. Run DB migrations in order: `db/migrations/001` through `004`
+5. Run DB migrations in order: `db/migrations/001` through `005`
 6. `docker compose up` to start Metabase
 7. `uvicorn app.main:app --reload` from `backend/`
 8. `npm run dev` from `frontend/`
@@ -234,16 +275,22 @@ at varying scales. See [validation.md](validation.md) for full results.
 |----------|-------------|
 | `UPLOAD_DIR` | Path to CSV upload directory |
 | `LLM_API_KEY` | API key for your chosen LLM provider |
-| `LLM_MODEL` | LiteLLM model string, e.g. `gemini/gemini-3.1-flash-lite`, `openai/gpt-4o-mini`, `anthropic/claude-haiku-4-5-20251001` |
+| `LLM_MODEL` | LiteLLM model string, e.g. `gemini/gemini-3.1-flash-lite`, `openai/gpt-4o-mini` |
 | `DATABASE_URL` | Postgres connection string |
 | `METABASE_URL` | Metabase base URL (default: http://localhost:3000) |
 | `METABASE_USERNAME` | Metabase admin username |
 | `METABASE_PASSWORD` | Metabase admin password |
 | `METABASE_DB_NAME` | Name of the database as it appears in Metabase |
+| `JWT_SECRET` | Secret key for JWT signing |
+| `JWT_ALGORITHM` | JWT algorithm (default: HS256) |
+| `JWT_EXPIRY_HOURS` | Token expiry in hours (default: 24) |
+| `DB_POOL_MIN` | asyncpg pool minimum connections (default: 2) |
+| `DB_POOL_MAX` | asyncpg pool maximum connections (default: 10) |
 
 ---
 
 ## Status
 
 Production-ready MVP, actively extended. End-to-end functional and validated
-across five datasets. New capabilities shipping continuously.
+across five datasets. Auth, ownership, async I/O, and public sharing all shipped.
+New capabilities shipping continuously.
