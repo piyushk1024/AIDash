@@ -8,7 +8,7 @@ from app.routes import (
     uploadsRoute, profilerRoute, semanticsRoute,
     dashboardRoute, metabaseRoute, cleanupRoute,
     datasetsRoute, insightsRoute, nlDashboardRoute,
-    authroute
+    authRoute,agentRoute
 )
 
 
@@ -43,4 +43,5 @@ app.include_router(metabaseRoute.router)
 app.include_router(insightsRoute.router)
 app.include_router(cleanupRoute.router)
 app.include_router(nlDashboardRoute.router)
-app.include_router(authroute.router)
+app.include_router(authRoute.router)
+app.include_router(agentRoute.router)

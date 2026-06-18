@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRY_HOURS: int = 24
+    AGENT_MAX_INSPECT_CALLS: int = 3
+    AGENT_MAX_ITERATIONS: int = 12
 
 settings = Settings()
 

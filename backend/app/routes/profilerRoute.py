@@ -2,17 +2,20 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from app.config import settings
 from app.services.profiler import profile_csv
-from app.dependencies import get_current_user
-
+from app.dependencies import require_editor, get_db
+from app.services.database import get_dataset_owner
 
 
 router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
 
 @router.get("/profile-csv/{dataset_id}")
-async def profile_csv_route(dataset_id: str, current_user=Depends(get_current_user)):
+async def profile_csv_route(dataset_id: str, db=Depends(get_db), current_user=Depends(require_editor)):
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset not found")
+    owner = await get_dataset_owner(db, dataset_id)          # ← ownership check
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
-    return profile_csv(matches[0], dataset_id)
+    return profile_csv(matches[0], dataset_id)    

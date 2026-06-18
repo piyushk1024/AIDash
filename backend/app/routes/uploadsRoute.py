@@ -42,14 +42,15 @@ async def upload_csv(
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
 
-    existing = next(
-        (
-            f
-            for f in UPLOAD_DIR.glob("*.csv")
-            if f.name.split("_", 1)[-1] == file.filename
-        ),
-        None,
-    )
+    existing = None
+    for f in UPLOAD_DIR.glob("*.csv"):
+        if f.name.split("_", 1)[-1] == file.filename:
+            candidate_id = f.name.split("_", 1)[0]
+            owner = await get_dataset_owner(db, candidate_id)
+            if owner == current_user.user_id:
+                existing = f
+                break
+    
     if existing and not replace and not force_new:
         existing_dataset_id = existing.name.split("_", 1)[0]
         raise HTTPException(
