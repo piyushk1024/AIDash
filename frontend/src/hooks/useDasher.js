@@ -21,11 +21,14 @@ export function useDasher() {
   const [semantics, setSemantics] = useState(null);
   const [plan, setPlan] = useState(null);
   const [dashboardResult, setDashboardResult] = useState(null);
+  
   const [conflict, setConflict] = useState(null); // { existing_dataset_id }
 
   // Per-step status and error messages
   const [status, setStatus] = useState(initialStatus);
   const [errors, setErrors] = useState({});
+  // Agentic persistance
+  const [agentResult, setAgentResult] = useState(null)
 
   // Helper — update one step's status without touching the others.
   // The ...prev spread means "keep everything else the same"
@@ -117,33 +120,42 @@ export function useDasher() {
   }
 
   // Get prior states of datasets
-  async function rehydrate(id) {
-    try {
-      const state = await api.getDatasetState(id);
-      const {
-        upload_result,
-        semantics: sem,
-        plan: pl,
-        dashboard_result,
-      } = state;
+async function rehydrate(id) {
+  try {
+    const state = await api.getDatasetState(id);
+    const {
+      upload_result,
+      semantics: sem,
+      plan: pl,
+      dashboard_result,
+      agent_result,
+    } = state;
 
-      setDatasetId(id);
-      setUploadResult(upload_result);
-      setSemantics(sem);
-      setPlan(pl);
+    setDatasetId(id);
+    setUploadResult(upload_result);
+    setSemantics(sem);
+    setPlan(pl);
+
+    // Only one of these will be non-null — set the correct one, clear the other.
+    if (agent_result) {
+      setAgentResult(agent_result);
+      setDashboardResult(null);
+    } else {
       setDashboardResult(dashboard_result);
-
-      setStatus({
-        upload: upload_result ? "done" : "idle",
-        semantics: sem ? "done" : "idle",
-        plan: pl ? "done" : "idle",
-        dashboard: dashboard_result ? "done" : "idle",
-      });
-    } catch (e) {
-      // If state fetch fails, just start fresh — don't block the user
-      console.error("Rehydrate failed:", e.message);
+      setAgentResult(null);
     }
+
+    setStatus({
+      upload:    upload_result                       ? "done" : "idle",
+      semantics: sem                                 ? "done" : "idle",
+      plan:      pl                                  ? "done" : "idle",
+      dashboard: (agent_result || dashboard_result)  ? "done" : "idle",
+    });
+  } catch (e) {
+    // If state fetch fails, just start fresh — don't block the user
+    console.error("Rehydrate failed:", e.message);
   }
+}
 
   function reset() {
     setDatasetId(null);
@@ -152,6 +164,7 @@ export function useDasher() {
     setPlan(null);
     setDashboardResult(null);
     setStatus(initialStatus);
+    setAgentResult(null)
     setErrors({});
   }
   //------------ Card Creation bits-------
@@ -189,6 +202,7 @@ function setDashboardPublished(value) {
     semantics,
     plan,
     dashboardResult,
+    agentResult,
     conflict,
     // Status per step
     status,
@@ -204,6 +218,7 @@ function setDashboardPublished(value) {
     addCard,
     replaceCard,
     removeCard,
-    setDashboardPublished
+    setDashboardPublished,
+    setAgentResult
   };
 }

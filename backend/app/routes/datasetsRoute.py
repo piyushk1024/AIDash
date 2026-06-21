@@ -38,36 +38,51 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
         "field_map": metadata["field_map"],
     }
 
-    # Reconstruct dashboardResult if a dashboard was created
+    # Reconstruct dashboard state if a dashboard was created.
+    # Mode-aware: agent runs return agent_result; pipeline runs return dashboard_result.
     dashboard_result = None
+    agent_result = None
+
     if metadata.get("metabase_dashboard_id"):
         dashboard_id = metadata["metabase_dashboard_id"]
         plan = state["plan"]
-        dashboard_result = {
-            "dashboard_id": dashboard_id,
-            "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",
-            "public_url": metadata.get("public_url"),
-            "published": metadata.get("published", False),
-            "cards_created": len(plan.get("charts", [])) if plan else 0,
-            "cards": [
-                {
-                    "card_id": c.get("card_id"),
-                    "chart_title": c["chart_title"],
-                    "chart_type": c.get("chart_type"),
-                    "healed": c.get("healed", False),
-                    "original_chart": c.get("original_chart"),
-                    "healed_chart": c.get("healed_chart"),
-                }
-                for c in plan.get("charts", [])
-            ] if plan else [],
-            "errors": plan.get("errors", []) if plan else []
-        }
+        is_agent = plan is not None and plan.get("mode") == "agent"
+
+        if is_agent:
+            agent_result = {
+                "dashboard_id": dashboard_id,
+                "public_url":   metadata.get("public_url"),
+                "published":    metadata.get("published", False),
+                "charts_built": plan.get("charts", 0),
+                "trace":        plan.get("trace", []),
+            }
+        else:
+            dashboard_result = {
+                "dashboard_id":  dashboard_id,
+                "dashboard_url": f"{settings.METABASE_URL}/dashboard/{dashboard_id}",
+                "public_url":    metadata.get("public_url"),
+                "published":     metadata.get("published", False),
+                "cards_created": len(plan.get("charts", [])) if plan else 0,
+                "cards": [
+                    {
+                        "card_id":        c.get("card_id"),
+                        "chart_title":    c["chart_title"],
+                        "chart_type":     c.get("chart_type"),
+                        "healed":         c.get("healed", False),
+                        "original_chart": c.get("original_chart"),
+                        "healed_chart":   c.get("healed_chart"),
+                    }
+                    for c in plan.get("charts", [])
+                ] if plan else [],
+                "errors": plan.get("errors", []) if plan else [],
+            }
 
     return {
-        "upload_result": upload_result,
-        "semantics":     state["semantics"],
-        "plan":          state["plan"],
+        "upload_result":    upload_result,
+        "semantics":        state["semantics"],
+        "plan":             state["plan"],
         "dashboard_result": dashboard_result,
+        "agent_result":     agent_result,
     }
 
 @router.post("/datasets/{dataset_id}/publish")

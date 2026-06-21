@@ -1,4 +1,4 @@
-# app/routes/agentRoute.py
+
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -19,9 +19,13 @@ from app.services.metabaseClient import (
 )
 from app.dependencies import get_db, get_http_client, get_app_state, require_editor
 from app.config import settings
+import logging
 
 router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
+
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_GOAL = "Build the most analytically interesting dashboard you can from this dataset."
 
@@ -54,42 +58,51 @@ async def run_agent_dashboard(
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found.")
-    profile = profile_csv(matches[0], dataset_id)
 
-    token = await get_session_token(http_client, app_state)
-    database_id = await get_database_id(token, http_client)
+    try:
+        profile = profile_csv(matches[0], dataset_id)
 
-    dashboard_title = f"{metadata['table_name']} — Agent"
-    dashboard_id = await create_dashboard(token, http_client, dashboard_title)
-    public_url = await create_public_link(token, http_client, dashboard_id)
-    await persist_metabase_dashboard_id(db, dataset_id, dashboard_id, public_url)
+        token = await get_session_token(http_client, app_state)
+        database_id = await get_database_id(token, http_client)
 
-    goal = body.goal.strip() or DEFAULT_GOAL
+        dashboard_title = f"{metadata['table_name']} — Agent"
+        dashboard_id = await create_dashboard(token, http_client, dashboard_title)
+        public_url = await create_public_link(token, http_client, dashboard_id)
+        await persist_metabase_dashboard_id(db, dataset_id, dashboard_id, public_url)
 
-    result = await run_agent(
-        goal=goal,
-        table_name=metadata["table_name"],
-        field_map=metadata["field_map"],
-        semantics=semantics,
-        profile=profile,
-        dashboard_id=dashboard_id,
-        token=token,
-        http_client=http_client,
-        database_id=database_id,
-    )
+        goal = body.goal.strip() or DEFAULT_GOAL
 
-    agent_plan = {
-        "dataset_id": dataset_id,
-        "dashboard_title": dashboard_title,
-        "mode": "agent",
-        "goal": goal,
-        "charts": result["charts_built"],
-    }
-    await persist_dashboard_plan(db, dataset_id, agent_plan)
+        result = await run_agent(
+            goal=goal,
+            table_name=metadata["table_name"],
+            field_map=metadata["field_map"],
+            semantics=semantics,
+            profile=profile,
+            dashboard_id=dashboard_id,
+            token=token,
+            http_client=http_client,
+            database_id=database_id,
+        )
 
-    return {
-        "dashboard_id": dashboard_id,
-        "public_url": public_url,
-        "charts_built": result["charts_built"],
-        "trace": result["trace"],
-    }
+        agent_plan = {
+            "dataset_id": dataset_id,
+            "dashboard_title": dashboard_title,
+            "mode": "agent",
+            "goal": goal,
+            "charts": result["charts_built"],
+            "trace": result["trace"],
+        }
+        await persist_dashboard_plan(db, dataset_id, agent_plan)
+
+        return {
+            "dashboard_id": dashboard_id,
+            "public_url": public_url,
+            "charts_built": result["charts_built"],
+            "trace": result["trace"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Agent run failed for dataset %s", dataset_id)
+        raise HTTPException(status_code=500, detail="Agent run failed. Please try again.")

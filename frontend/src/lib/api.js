@@ -122,4 +122,8 @@ export const api = {
 
   getPublicDashboard: (datasetId) =>
     request('GET', `/datasets/${datasetId}/public`),
+
+  runAgent: (datasetId, goal) =>
+  request('POST', `/datasets/${datasetId}/dashboard/agent`, goal ? { goal } : {}),
+  
 }
