@@ -70,7 +70,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     field_map = metadata["field_map"] if metadata else {}
     table_name = metadata["table_name"] if metadata else ""
 
-    plan = await generate_dashboard_plan(dataset_id, semantics, profile, table_name, field_map)
+    plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
 
     plan["charts"] = validate_and_clean_charts(plan["charts"])
 

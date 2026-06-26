@@ -5,6 +5,7 @@ import httpx
 from app.config import settings
 
 METABASE_URL = settings.METABASE_URL
+METABASE_PUBLIC_URL = settings.METABASE_PUBLIC_URL
 
 
 async def get_session_token(http_client: httpx.AsyncClient, app_state) -> str:
@@ -224,7 +225,7 @@ async def create_public_link(
     )
     resp.raise_for_status()
     uuid = resp.json()["uuid"]
-    return f"{METABASE_URL}/public/dashboard/{uuid}"
+    return f"{METABASE_PUBLIC_URL}/public/dashboard/{uuid}"
 
 
 async def execute_sql_query(

@@ -1,21 +1,16 @@
 import json
 from app.services.llm import generate
 from app.schemas.semantics import InferSemanticsResponse
-# from app.config import settings
 
 
-
-async def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | None = None) -> InferSemanticsResponse:
-
+def build_semantics_prompt(context: str, business_hint: str | None = None) -> str:
     hint_line = f"Business context: {business_hint}" if business_hint else ""
-
-    prompt = f"""
-    You are a data analyst. Analyse the dataset profile below and classify every column.
+    return f"""
+    You are a data analyst. Analyse the dataset below and classify every column.
 
     {hint_line}
 
-    Dataset profile:
-    {json.dumps(dataset_profile, indent=2)}
+    {context}
 
     Before classifying columns, reason through the following:
     - Use value_counts to understand categorical distributions and spot columns with mixed or heterogeneous meaning
@@ -27,7 +22,7 @@ async def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | N
     - If the column name suggests ranking, scoring, or counting (e.g. "rank", "score", "rating", "orders", "count") → measure, even if distinct_count is low
     - If none of the above apply and distinct_count is 5 or fewer → flag or dimension, not measure
     - If a numeric column appears heterogeneous, reflect that in its semantic_role and add a note explaining the grouping
-    - For any measure column identified as heterogeneous, set heterogeneous: true and set filter_column to the categorical column that controls its unit or meaning    
+    - For any measure column identified as heterogeneous, set heterogeneous: true and set filter_column to the categorical column that controls its unit or meaning
 
     Return ONLY a JSON object with exactly these fields:
     - dataset_id: string
@@ -35,12 +30,11 @@ async def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | N
     - dataset_grain: string (e.g. "daily per mall")
     - date_columns: list of {{column, semantic_role, confidence, chartable}}
     - dimensions: list of {{column, semantic_role, confidence, chartable}}
-    - measures: list of {{column, semantic_role, confidence, chartable}}
+    - measures: list of {{column, semantic_role, confidence, chartable, heterogeneous, filter_column}}
     - flags: list of {{column, semantic_role, confidence, chartable}}
     - identifiers: list of {{column, semantic_role, confidence, chartable}}
     - unknown: list of {{column, semantic_role, confidence, chartable}}
     - notes: list of strings
-    - measures: list of {{column, semantic_role, confidence, chartable, heterogeneous, filter_column}}
 
     Rules for chartable:
     - Set chartable: false for serial numbers, row IDs, and any column that is purely an identifier with no analytical value
@@ -53,6 +47,15 @@ async def infer_semantics_with_llm(dataset_profile: dict, business_hint: str | N
     Confidence is a float between 0 and 1.
     Do not include any explanation or markdown. Return raw JSON only.
     """
+
+
+async def infer_semantics_with_llm(
+    dataset_profile: dict,
+    business_hint: str | None = None,
+) -> InferSemanticsResponse:
+    context = f"Dataset profile:\n{json.dumps(dataset_profile, indent=2)}"
+    prompt = build_semantics_prompt(context, business_hint)
+
     raw = await generate(prompt)
     if raw.startswith("```"):
         raw = raw.split("```")[1]

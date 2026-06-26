@@ -1,3 +1,4 @@
+import hashlib
 from pathlib import Path
 from uuid import uuid4, UUID
 from app.config import settings
@@ -6,8 +7,9 @@ from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.database import (
     persist_dataset_metadata,
     get_dataset_metadata,
+    get_dataset_by_checksum,
     delete_dataset,
-    get_dataset_owner
+    get_dataset_owner,
 )
 from app.services.metabaseClient import (
     get_session_token,
@@ -42,6 +44,11 @@ async def upload_csv(
     if not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Only CSV files supported")
 
+    # Read bytes early — needed for checksum before any conflict checks
+    content = await file.read()
+    checksum = hashlib.sha256(content).hexdigest()
+
+    # Filename-based conflict check
     existing = None
     for f in UPLOAD_DIR.glob("*.csv"):
         if f.name.split("_", 1)[-1] == file.filename:
@@ -50,13 +57,26 @@ async def upload_csv(
             if owner == current_user.user_id:
                 existing = f
                 break
-    
+
     if existing and not replace and not force_new:
         existing_dataset_id = existing.name.split("_", 1)[0]
         raise HTTPException(
             status_code=409,
             detail={"conflict": True, "existing_dataset_id": existing_dataset_id},
         )
+
+    # Checksum-based conflict check — catches identical content under a different filename
+    if not replace and not force_new:
+        duplicate_id = await get_dataset_by_checksum(db, checksum, current_user.user_id)
+        if duplicate_id:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "conflict": True,
+                    "existing_dataset_id": duplicate_id,
+                    "reason": "duplicate_content",
+                },
+            )
 
     if existing and replace:
         existing_dataset_id = existing.name.split("_", 1)[0]
@@ -79,7 +99,6 @@ async def upload_csv(
     safe_name = f"{dataset_id}_{Path(file.filename).name}"
     save_path = UPLOAD_DIR / safe_name
 
-    content = await file.read()
     save_path.write_bytes(content)
 
     table_name = sanitise_table_name(file.filename)
@@ -108,6 +127,8 @@ async def upload_csv(
         metabase_table_id=metabase_result["table_id"],
         field_map=metabase_result["field_map"],
         user_id=current_user.user_id,
+        original_filename=file.filename,
+        file_checksum=checksum,
     )
 
     return {
@@ -150,4 +171,3 @@ async def list_datasets(
         )
 
     return {"datasets": datasets}
-

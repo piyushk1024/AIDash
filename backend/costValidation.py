@@ -1,12 +1,12 @@
 """
-cost_faceoff.py — Dashboard creation: Dasher profiling vs naive row-passing
+costValidation.py — Dashboard creation: Dasher profiling vs naive row-passing
 
 Tests the core architectural claim:
   Dasher sends O(columns) statistical summary to the LLM for semantic inference.
   Naive sends raw CSV rows directly. Row count should not affect Dasher's token usage.
 
 Usage:
-    python cost_faceoff.py --csv path/to/file.csv --rows 500
+    python costValidation.py --csv path/to/file.csv --rows 500
 
 Requires LLM_API_KEY and LLM_MODEL in .env or environment.
 
@@ -24,35 +24,13 @@ from dotenv import load_dotenv
 
 from app.config import settings
 from app.services.profiler import profile_csv
+from app.services.llmClient import build_semantics_prompt
 
 load_dotenv()
 
 # Verify pricing at your provider's docs before running
 PRICE_PER_1M_INPUT  = 0.10   # USD
 PRICE_PER_1M_OUTPUT = 0.40   # USD
-
-# Same semantics prompt used in llmClient.py — kept identical for fair comparison
-SEMANTICS_PROMPT_TEMPLATE = """
-You are a data analyst. Analyse the dataset below and classify every column.
-
-{context}
-
-Return ONLY a JSON object with exactly these fields:
-- dataset_grain: string (e.g. "one row per match")
-- date_columns: list of {{column, semantic_role, confidence, chartable}}
-- dimensions: list of {{column, semantic_role, confidence, chartable}}
-- measures: list of {{column, semantic_role, confidence, chartable}}
-- flags: list of {{column, semantic_role, confidence, chartable}}
-- identifiers: list of {{column, semantic_role, confidence, chartable}}
-- notes: list of strings
-
-Rules for chartable:
-- false for serial numbers, row IDs, free text, or >50 distinct non-categorical values
-- true for measures, flags, dates, and meaningful categorical dimensions
-
-Confidence is a float between 0 and 1.
-No markdown. Raw JSON only.
-"""
 
 
 def call_llm(prompt: str) -> dict:
@@ -78,10 +56,10 @@ def call_llm(prompt: str) -> dict:
 def run_dasher(csv_path: Path) -> dict:
     """Profile with pandas, send summary to LLM."""
     print("  Building profile...")
-    profile = profile_csv(csv_path, dataset_id="faceoff")
-    context = f"Dataset profile (statistical summary):\n{json.dumps(profile, indent=2)}"
-    prompt  = SEMANTICS_PROMPT_TEMPLATE.format(context=context)
-    result  = call_llm(prompt)
+    profile  = profile_csv(csv_path, dataset_id="faceoff")
+    context  = f"Dataset profile (statistical summary):\n{json.dumps(profile, indent=2)}"
+    prompt   = build_semantics_prompt(context)
+    result   = call_llm(prompt)
     result["context_chars"] = len(context)
     result["approach"]      = "Dasher (profile)"
     return result
@@ -92,7 +70,7 @@ def run_naive(csv_path: Path, max_rows: int) -> dict:
     print(f"  Reading {max_rows} raw rows...")
     df      = pd.read_csv(csv_path, encoding="utf-8-sig").head(max_rows)
     context = f"Raw dataset ({max_rows} rows):\n{df.to_csv(index=False)}"
-    prompt  = SEMANTICS_PROMPT_TEMPLATE.format(context=context)
+    prompt  = build_semantics_prompt(context)
     result  = call_llm(prompt)
     result["context_chars"] = len(context)
     result["approach"]      = f"Naive ({max_rows} rows)"
@@ -117,7 +95,8 @@ def score_semantics(response_text: str, csv_path: Path) -> str:
             parsed.get("dimensions",   []) +
             parsed.get("measures",     []) +
             parsed.get("flags",        []) +
-            parsed.get("identifiers",  [])
+            parsed.get("identifiers",  []) +
+            parsed.get("unknown",      [])
         )
         df         = pd.read_csv(csv_path, encoding="utf-8-sig", nrows=1)
         expected   = len(df.columns)

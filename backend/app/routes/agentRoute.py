@@ -76,7 +76,7 @@ async def run_agent_dashboard(
             goal=goal,
             table_name=metadata["table_name"],
             field_map=metadata["field_map"],
-            semantics=semantics,
+            semantics=semantics["semantics_json"],
             profile=profile,
             dashboard_id=dashboard_id,
             token=token,

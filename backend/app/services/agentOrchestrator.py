@@ -75,7 +75,7 @@ async def _dispatch_inspect_data(tool_args: dict, execute_sql_fn, step: int) -> 
     try:
         validate_sql(sql, context="agent_inspect")
     except ValueError as e:
-        observation = {"error": f"SQL validation failed: {str(e)}"}
+        observation = {"error": "SQL validation failed."}
         trace_entry = {
             "step": step,
             "tool": "inspect_data",
@@ -125,7 +125,7 @@ async def _dispatch_build_and_add_chart(
     try:
         validate_sql(chart_spec["sql"], context=chart_spec["chart_title"])
     except ValueError as e:
-        observation = {"error": f"SQL validation failed: {str(e)}"}
+        observation = {"error": "SQL validation failed."}
         trace_entry = {
             "step": step,
             "tool": "build_and_add_chart",

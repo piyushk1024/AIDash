@@ -10,12 +10,16 @@ from app.routes import (
     datasetsRoute, insightsRoute, nlDashboardRoute,
     authRoute,agentRoute
 )
+from app.services.migrationRunner import run_migrations
+import logging
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     app.state.db_pool = await create_pool()
+    await run_migrations(app.state.db_pool)
     app.state.http_client = httpx.AsyncClient()
     app.state.metabase_token = None
     app.state.metabase_token_expires = 0.0

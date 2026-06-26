@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     METABASE_SYNC_TIMEOUT: int = 60
     DATABASE_URL: str
     METABASE_URL: str
+    METABASE_PUBLIC_URL: str = "http://localhost:3000"
     METABASE_USERNAME: str
     METABASE_PASSWORD: str
     METABASE_DB_NAME: str 

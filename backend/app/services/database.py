@@ -34,10 +34,10 @@ async def create_pool() -> asyncpg.Pool:
 async def get_cached_semantics(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT semantics_json FROM dataset_semantics WHERE dataset_id = $1",
+            "SELECT semantics_json, business_hint FROM dataset_semantics WHERE dataset_id = $1",
             dataset_id,
         )
-        return row["semantics_json"] if row else None
+        return {"semantics_json": row["semantics_json"], "business_hint": row["business_hint"]} if row else None
 
 
 async def persist_semantics(
@@ -109,23 +109,28 @@ async def persist_dataset_metadata(
     metabase_table_id: int,
     field_map: dict,
     user_id: str,
+    original_filename: str | None = None,
+    file_checksum: str | None = None,
 ):
     async with pool.acquire() as conn:
         await conn.execute(
             """
             INSERT INTO dataset_metadata
-                (dataset_id, table_name, metabase_table_id, field_map, user_id)
-            VALUES ($1, $2, $3, $4, $5)
+                (dataset_id, table_name, metabase_table_id, field_map, user_id,
+                 original_filename, file_checksum)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (dataset_id) DO UPDATE
             SET table_name        = EXCLUDED.table_name,
                 metabase_table_id = EXCLUDED.metabase_table_id,
                 field_map         = EXCLUDED.field_map,
                 user_id           = EXCLUDED.user_id,
+                original_filename = EXCLUDED.original_filename,
+                file_checksum     = EXCLUDED.file_checksum,
                 updated_at        = NOW()
             """,
             dataset_id, table_name, metabase_table_id, field_map, user_id,
+            original_filename, file_checksum,
         )
-
 
 async def get_dataset_metadata(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
@@ -139,6 +144,17 @@ async def get_dataset_metadata(pool: asyncpg.Pool, dataset_id: str):
             dataset_id,
         )
         return dict(row) if row else None
+
+async def get_dataset_by_checksum(pool: asyncpg.Pool, checksum: str, user_id: str) -> str | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT dataset_id FROM dataset_metadata
+            WHERE file_checksum = $1 AND user_id = $2
+            """,
+            checksum, user_id,
+        )
+        return row["dataset_id"] if row else None
 
 
 async def persist_metabase_dashboard_id(
@@ -328,4 +344,38 @@ async def set_published(pool: asyncpg.Pool, dataset_id: str, published: bool):
             WHERE dataset_id = $2
             """,
             published, dataset_id,
+        )
+
+# ── Profile ───────────────────────────────────────────────────
+
+async def get_cached_profile(pool: asyncpg.Pool, dataset_id: str) -> dict | None:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT profile_json FROM dataset_metadata WHERE dataset_id = $1",
+            dataset_id,
+        )
+        return row["profile_json"] if row else None
+
+async def persist_profile_json(pool: asyncpg.Pool, dataset_id: str, profile: dict) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE dataset_metadata SET profile_json = $1 WHERE dataset_id = $2",
+            profile, dataset_id,
+        )
+
+async def mark_plan_stale(pool: asyncpg.Pool, dataset_id: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            UPDATE dashboard_plans
+            SET stale              = true,
+                generation_counter = generation_counter + 1
+            WHERE plan_id = (
+                SELECT plan_id FROM dashboard_plans
+                WHERE dataset_id = $1
+                ORDER BY created_at DESC
+                LIMIT 1
+            )
+            """,
+            dataset_id,
         )
