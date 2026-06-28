@@ -14,3 +14,7 @@ backend/app/uploads*
 backend/AIDash/*
 dataset/
 git_history.txt
+*.csv
+backend/app/uploads/
+dataset/
+.~lock.*
