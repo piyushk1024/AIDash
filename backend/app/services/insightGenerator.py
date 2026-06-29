@@ -81,7 +81,8 @@ def _build_field_reference(field_map: dict, semantics: dict) -> str:
     )
 
 
-async def _call_llm(prompt: str) -> dict:
+async def _call_llm(prompt: str, stage: str = "insight") -> dict:
+    # If granular identification is required, change the calling sight with stage parameter
     raw = await generate(prompt)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()

@@ -44,7 +44,7 @@ async def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
         field_reference=field_reference
     )
 
-    raw = await generate(prompt)
+    raw = await generate(prompt, stage="healer" )
     
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()

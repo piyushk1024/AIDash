@@ -11,6 +11,8 @@ from app.routes import (
     authRoute,agentRoute
 )
 from app.services.migrationRunner import run_migrations
+from app.services.telemetry import setup_telemetry, shutdown_telemetry
+
 import logging
 logging.basicConfig(level=logging.INFO)
 
@@ -18,6 +20,7 @@ logging.basicConfig(level=logging.INFO)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    setup_telemetry()
     app.state.db_pool = await create_pool()
     await run_migrations(app.state.db_pool)
     app.state.http_client = httpx.AsyncClient()
@@ -27,6 +30,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     await app.state.db_pool.close()
     await app.state.http_client.aclose()
+    shutdown_telemetry()
 
 
 app = FastAPI(title="AI Dashboard MVP", lifespan=lifespan)

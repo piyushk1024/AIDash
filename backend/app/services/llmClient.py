@@ -56,7 +56,7 @@ async def infer_semantics_with_llm(
     context = f"Dataset profile:\n{json.dumps(dataset_profile, indent=2)}"
     prompt = build_semantics_prompt(context, business_hint)
 
-    raw = await generate(prompt)
+    raw = await generate(prompt, stage="semantics")
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):

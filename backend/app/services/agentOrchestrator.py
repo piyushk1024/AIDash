@@ -192,7 +192,7 @@ async def run_agent(
 
     for iteration in range(settings.AGENT_MAX_ITERATIONS):
         available_tools = _get_available_tools(inspect_count)
-        msg = await generate_with_tools(messages, available_tools)
+        msg = await generate_with_tools(messages, available_tools, stage="agent")
 
         messages.append(_build_assistant_message(msg))
 

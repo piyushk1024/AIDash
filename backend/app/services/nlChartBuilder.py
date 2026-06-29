@@ -104,7 +104,7 @@ async def build_chart_from_prompt(
         prompt=prompt,
     )
 
-    raw = await generate(prompt_text)
+    raw = await generate(prompt_text, stage="nl_authoring")
     
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()

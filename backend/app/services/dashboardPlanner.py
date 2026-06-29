@@ -136,7 +136,7 @@ async def generate_dashboard_plan(
         profile_summary=json.dumps(profile_summary, indent=2),
     )
 
-    raw = await generate(prompt)
+    raw = await generate(prompt, stage="planner")
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
