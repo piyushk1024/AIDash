@@ -2,7 +2,7 @@
 
 Upload a CSV. Get a deployed, interactive dashboard in minutes. No column mapping, no chart config, no BI expertise required.
 
-**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · LiteLLM · Gemini 2.5 Flash-Lite · asyncpg · httpx · PyJWT
+**Stack:** FastAPI · React/Tailwind · PostgreSQL · Metabase · LiteLLM · Gemini 2.5 Flash-Lite · asyncpg · httpx · PyJWT · OpenTelemetry
 
 > Built with Claude as a development accelerator. Architecture decisions, product tradeoffs, and validation are the author's own.
 
@@ -12,8 +12,9 @@ Dasher is an AI-enabled dashboarding tool and portfolio project built to demonst
 agentic AI patterns, production-grade API design, and end-to-end system thinking.
 It runs two build modes: a sequential pipeline (profile → semantics → plan → build)
 and an agentic mode where an LLM orchestrates the same pipeline via native
-function-calling with no LangChain dependency. Both modes produce a fully deployed,
-embedded, shareable Metabase dashboard from a raw CSV upload.
+function-calling with no LangChain dependency, streaming its progress to the client
+in real time over SSE. Both modes produce a fully deployed, embedded, shareable
+Metabase dashboard from a raw CSV upload.
 
 ## The problem
 
@@ -32,9 +33,10 @@ The only input required is a CSV and an optional one-line description of the dat
 2. LLM classifies every column: dimensions, measures, dates, flags, identifiers
 3. Two-pass dashboard planning: analytical questions first, then charts
 4. PostgreSQL-native charts created in Metabase via API, embedded in the UI
-5. Natural language authoring: add, edit, or delete charts post-build
-6. Natural language insight engine against live data
-7. One-click public sharing
+5. Agentic build mode streams live progress (inspect/build/heal/finish) over SSE
+6. Natural language authoring: add, edit, or delete charts post-build
+7. Natural language insight engine against live data
+8. One-click public sharing
 
 ---
 
@@ -56,6 +58,9 @@ Raw PostgreSQL generated directly via Metabase's native query API: window functi
 **Agentic mode with native function-calling**
 An LLM agent orchestrates the full pipeline via native Gemini function-calling, no LangChain or LangGraph. Tools: `inspect_data`, `build_and_add_chart`, `finish`. Agent goal is pre-populated from the business context set at upload time; editable before launch.
 
+**Real-time agent streaming**
+The agent loop is an async generator (`stream_agent`) yielding typed events (`step_started`, `inspect_result`, `chart_built`, `healing`, `finish`) over Server-Sent Events. Each trace-worthy event is persisted to `dashboard_plans.plan_json` before the next step runs, so a client disconnect mid-run is recoverable: `GET /datasets/{id}/state` returns the partial trace and whatever charts had already landed in Metabase. The existing synchronous endpoint is preserved as a thin wrapper over the same generator.
+
 **Two-stage self-healing**
 Chart failures caught at two levels: Python API failures and Metabase rendering failures. Both trigger an automated LLM-powered heal cycle. Healed charts flagged in UI with before/after diff.
 
@@ -70,6 +75,9 @@ SHA-256 checksum stored per upload. Per-user unique index on `(file_checksum, us
 
 **Hand-rolled migration runner**
 ~20-line runner, `schema_versions` table, numbered SQL files applied in order, each in its own transaction, runs in the FastAPI lifespan hook. No Alembic: the asyncpg-direct stack has no ORM; adding one for migrations alone wasn't justified.
+
+**OpenTelemetry instrumentation**
+Spans on every LLM call (`generate()` / `generate_with_tools()`) carrying `stage`, `model`, `input_tokens`, `output_tokens`, and `latency_ms`. Per-stage cost and latency attribution across the full pipeline without touching business logic.
 
 **Async throughout**
 asyncpg connection pool + httpx.AsyncClient, both lifespan-managed and injected via FastAPI dependency injection. Event loop never blocked.
@@ -87,12 +95,15 @@ asyncpg connection pool + httpx.AsyncClient, both lifespan-managed and injected 
 - LLM semantic inference with confidence scores, force flag, staleness cascade
 - Two-pass dashboard planning with post-planning validation and deduplication
 - Agentic mode: native function-calling, goal pre-populated from business context
+- Real-time SSE streaming for agent builds, with DB-backed disconnect resumption
+- LLM provider 503s surfaced to the client with clear provider attribution, not a generic 500
 - Two-stage self-healing with LLM diagnosis, healed/failed diff surfaced in UI
 - Natural language chart authoring (add, edit, delete) post-build
 - Two-turn NL insight engine: stats-mode (no row-level data) or live SQL execution
 - Public sharing: owner-toggled, open endpoint, Metabase dashboard ID never exposed
 - Hand-rolled migration runner, auto-applied on startup
-- Full session rehydration from prior pipeline state
+- Full session rehydration from prior pipeline state, mode-aware (pipeline vs agent)
+- OpenTelemetry spans across the LLM pipeline: per-stage cost and latency attribution
 - LLM-agnostic via LiteLLM. Provider swap is a one-line config change
 - Validated across 5 structurally distinct datasets including 260K and 220K row CSVs
 
@@ -113,6 +124,8 @@ asyncpg connection pool + httpx.AsyncClient, both lifespan-managed and injected 
 | POST | `/infer-dataset-semantics/{id}` | Required | LLM semantic inference, cached |
 | POST | `/generate-dashboard-plan/{id}` | Required | Two-pass LLM dashboard plan |
 | POST | `/create-metabase-dashboard/{id}` | Required | Idempotent dashboard build with self-healing |
+| POST | `/datasets/{id}/dashboard/agent` | Required | Agentic build, synchronous |
+| POST | `/datasets/{id}/dashboard/agent/stream` | Required | Agentic build, SSE streaming with disconnect resumption |
 | POST | `/datasets/{id}/dashboard/charts` | Required | Add chart via natural language |
 | PUT | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Edit chart via natural language |
 | DELETE | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Delete chart |
@@ -160,9 +173,10 @@ npm run dev --prefix frontend
 
 ## Roadmap
 
-- [ ] SSE streaming: real-time agent progress, DB-backed disconnect resumption
+- [x] SSE streaming: real-time agent progress, DB-backed disconnect resumption
+- [x] OpenTelemetry: per-call latency and cost attribution across pipeline stages
+- [ ] LLM-as-judge chart quality evaluation
 - [ ] UI overhaul: one-shot launch card, sidebar dataset picker, per-card iframe grid
-- [ ] OpenTelemetry: per-call latency and cost attribution across pipeline stages
 - [ ] LLM evals harness: classification confidence, chart build success rate, plan relevance
 - [ ] Cloud deployment: Railway, S3/R2 for CSV storage
 - [ ] Security hardening: server-side Metabase iframe proxy, permissions lockdown

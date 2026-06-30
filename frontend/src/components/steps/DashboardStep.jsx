@@ -4,7 +4,14 @@ import AgentTrace from './AgentTrace'
 import HealingSummary from './HealingSummary'
 import PublishBar from './PublishBar'
 import NLAuthoringPanel from './NLAuthoringPanel'
+import { useEventStream } from '../../hooks/useEventStream'
 import { api } from '../../lib/api'
+
+function toTraceEntries(events) {
+  return events
+    .filter(e => e.type !== 'step_started' && e.type !== 'healing')
+    .map(({ type, charts_built, dashboard_id, public_url, ...rest }) => rest)
+}
 
 function StepHeader({ title }) {
   return (
@@ -32,9 +39,9 @@ export default function DashboardStep({ dasher, isActive }) {
 
   const [mode, setMode] = useState('pipeline')
   const [goal, setGoal] = useState('')
-  
-  const [agentLoading, setAgentLoading] = useState(false)
-  const [agentError, setAgentError] = useState(null)
+
+  const { events, streaming, streamError, startStream, reset } = useEventStream()
+
 
   const isLoading = status.dashboard === 'loading'
   const isDone = status.dashboard === 'done'
@@ -75,17 +82,21 @@ export default function DashboardStep({ dasher, isActive }) {
   }
 
   async function handleAgentRun() {
-    setAgentLoading(true)
-    setAgentError(null)
-    try {
-      const result = await api.runAgent(datasetId, goal.trim() || null)
-      setAgentResult(result)
-      setShowPreBuild(false)
-    } catch (e) {
-      setAgentError(e.message ?? 'Agent run failed')
-    } finally {
-      setAgentLoading(false)
-    }
+  reset()
+  // const result = await startStream(api.agentStreamUrl(datasetId), { goal: goal.trim() || null })
+  const trimmedGoal = goal.trim()
+  const result = await startStream(api.agentStreamUrl(datasetId), trimmedGoal ? { goal: trimmedGoal } : {})
+  const finishEvent = result.find(e => e.type === 'finish')
+  if (finishEvent) {
+    setAgentResult({
+      charts_built: finishEvent.charts_built,
+      trace: toTraceEntries(result),
+      public_url: finishEvent.public_url,
+      dashboard_id: finishEvent.dashboard_id,
+      published: false,
+    })
+    setShowPreBuild(false)
+  }
   }
 
   const publishBarProps = { published, publishing, onPublish: handlePublishToggle, copyLabel, onCopy: handleCopyLink }
@@ -258,7 +269,7 @@ export default function DashboardStep({ dasher, isActive }) {
             onChange={e => setGoal(e.target.value)}
             placeholder="e.g. Build a dashboard for C-suite executives focusing on top-line revenue and regional performance"
             rows={3}
-            disabled={agentLoading}
+            disabled={streaming}
             className="w-full bg-transparent border border-neutral-700 rounded px-3 py-2 font-mono text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-amber-400 transition-colors resize-none disabled:opacity-50"
           />
           <p className="font-mono text-[10px] text-neutral-700">
@@ -285,8 +296,8 @@ export default function DashboardStep({ dasher, isActive }) {
       {mode === 'pipeline' && errors.dashboard && (
         <div className="mb-3 font-mono text-xs text-red-400">✕ {errors.dashboard}</div>
       )}
-      {mode === 'agent' && agentError && (
-        <div className="mb-3 font-mono text-xs text-red-400">✕ {agentError}</div>
+      {mode === 'agent' && streamError  && (
+        <div className="mb-3 font-mono text-xs text-red-400">✕ {streamError}</div>
       )}
 
       {mode === 'pipeline' ? (
@@ -300,10 +311,10 @@ export default function DashboardStep({ dasher, isActive }) {
       ) : (
         <button
           onClick={handleAgentRun}
-          disabled={agentLoading}
+          disabled={streaming}
           className="px-6 py-2 rounded font-mono text-xs tracking-widest uppercase transition-all duration-200 disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300 enabled:cursor-pointer"
         >
-          {agentLoading ? 'Agent running...' : 'Run Agent →'}
+          {streaming ? 'Agent running...' : 'Run Agent →'}
         </button>
       )}
 
@@ -312,9 +323,14 @@ export default function DashboardStep({ dasher, isActive }) {
           Creating cards in Metabase...
         </div>
       )}
-      {agentLoading && (
-        <div className="mt-3 font-mono text-xs text-neutral-500 animate-pulse">
-          Agent is inspecting data and building charts...
+      {streaming && toTraceEntries(events).length === 0 && (
+      <div className="mt-3 font-mono text-xs text-neutral-500 animate-pulse">
+        Agent is starting...
+      </div>
+      )}
+      {streaming && toTraceEntries(events).length > 0 && (
+        <div className="mt-4">
+          <AgentTrace trace={toTraceEntries(events)} />
         </div>
       )}
     </div>

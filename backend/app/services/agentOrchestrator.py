@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import AsyncGenerator
 from app.services.llm import generate_with_tools
 from app.services.sqlGuard import validate_sql
 from app.services.cardBuilder import create_card_with_healing
@@ -112,7 +113,8 @@ async def _dispatch_build_and_add_chart(
     field_map: dict,
     charts_built: list,
     step: int,
-) -> tuple[dict, dict]:
+) -> tuple[dict, dict, bool]:
+    # Third return value is healed — True if the chart spec was healed before succeeding.
     chart_spec = {
         "chart_title": tool_args["chart_title"],
         "chart_type": tool_args["chart_type"],
@@ -133,9 +135,11 @@ async def _dispatch_build_and_add_chart(
             "chart_title": chart_spec["chart_title"],
             "observation": observation,
         }
-        return observation, trace_entry
+        return observation, trace_entry, False
 
     result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
+
+    healed = bool(result and result.get("healed"))
 
     if error:
         logger.error("Agent chart creation failed for '%s': %s", chart_spec["chart_title"], error)
@@ -158,7 +162,131 @@ async def _dispatch_build_and_add_chart(
         "chart_type": chart_spec["chart_type"],
         "observation": observation,
     }
-    return observation, trace_entry
+    return observation, trace_entry, healed
+
+
+async def stream_agent(
+    goal: str,
+    table_name: str,
+    field_map: dict,
+    semantics: dict,
+    profile: dict,
+    dashboard_id: int,
+    token: str,
+    http_client,
+    database_id: int,
+) -> AsyncGenerator[dict, None]:
+    field_reference = _build_field_reference(field_map, semantics)
+    profile_summary = _build_profile_summary(profile)
+
+    system_content = SYSTEM_PROMPT.format(
+        table_name=table_name,
+        field_reference=field_reference,
+        profile_summary=profile_summary,
+        goal=goal,
+    )
+
+    messages = [{"role": "user", "content": system_content}]
+    charts_built = []
+    inspect_count = 0
+
+    async def execute_sql_fn(sql: str) -> dict:
+        return await execute_sql_query(token, http_client, sql, database_id)
+
+    for iteration in range(settings.AGENT_MAX_ITERATIONS):
+        available_tools = _get_available_tools(inspect_count)
+        msg = await generate_with_tools(messages, available_tools, stage="agent")
+        messages.append(_build_assistant_message(msg))
+
+        if not msg.tool_calls:
+            logger.warning("Agent returned text at iteration %d — treating as finish", iteration)
+            break
+
+        tool_call = msg.tool_calls[0]
+        tool_name = tool_call.function.name
+        tool_args = json.loads(tool_call.function.arguments)
+        reasoning = tool_args.get("reasoning", "") or tool_args.get("summary", "")
+
+        # Yield before dispatching so the UI shows what the agent decided to do.
+        yield {
+            "type": "step_started",
+            "step": iteration + 1,
+            "tool": tool_name,
+            "reasoning": reasoning,
+        }
+
+        if tool_name == "finish":
+            summary = tool_args.get("summary", "Dashboard complete.")
+            observation = {"acknowledged": True}
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": json.dumps(observation),
+            })
+            yield {
+                "type": "finish",
+                "step": iteration + 1,
+                "tool": "finish",
+                "reasoning": summary,
+                "observation": observation,
+                "charts_built": charts_built,
+            }
+            break
+
+        if tool_name == "inspect_data":
+            observation, trace_entry = await _dispatch_inspect_data(
+                tool_args=tool_args,
+                execute_sql_fn=execute_sql_fn,
+                step=iteration + 1,
+            )
+            inspect_count += 1
+            yield {"type": "inspect_result", **trace_entry}
+
+        elif tool_name == "build_and_add_chart":
+            observation, trace_entry, healed = await _dispatch_build_and_add_chart(
+                tool_args=tool_args,
+                token=token,
+                http_client=http_client,
+                database_id=database_id,
+                dashboard_id=dashboard_id,
+                field_map=field_map,
+                charts_built=charts_built,
+                step=iteration + 1,
+            )
+            if healed:
+                yield {
+                    "type": "healing",
+                    "step": iteration + 1,
+                    "chart_title": tool_args.get("chart_title", ""),
+                }
+            if observation.get("success"):
+                yield {
+                    "type": "chart_built",
+                    **trace_entry,
+                    "sql": tool_args["sql"],
+                    "x_alias": tool_args.get("x_alias"),
+                    "y_alias": tool_args.get("y_alias"),
+                    "card_id": observation["card_id"],
+                    "healed": healed,
+                }
+            else:
+                yield {"type": "chart_failed", **trace_entry}
+
+        else:
+            observation = {"error": f"Unknown tool: {tool_name}"}
+            trace_entry = {
+                "step": iteration + 1,
+                "tool": tool_name,
+                "reasoning": "",
+                "observation": observation,
+            }
+            yield {"type": "phase_error", **trace_entry}
+
+        messages.append({
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": json.dumps(observation),
+        })
 
 
 async def run_agent(
@@ -172,88 +300,34 @@ async def run_agent(
     http_client,
     database_id: int,
 ) -> dict:
-    field_reference = _build_field_reference(field_map, semantics)
-    profile_summary = _build_profile_summary(profile)
-
-    system_content = SYSTEM_PROMPT.format(
-        table_name=table_name,
-        field_reference=field_reference,
-        profile_summary=profile_summary,
-        goal=goal,
-    )
-
-    messages = [{"role": "user", "content": system_content}]
-    trace = []
+    """
+    Wrapper around stream_agent for the existing synchronous route.
+    Collects all events and returns the same shape as before.
+    """
     charts_built = []
-    inspect_count = 0
+    trace = []
 
-    async def execute_sql_fn(sql: str) -> dict:
-        return await execute_sql_query(token, http_client, sql, database_id)
+    async for event in stream_agent(
+        goal=goal,
+        table_name=table_name,
+        field_map=field_map,
+        semantics=semantics,
+        profile=profile,
+        dashboard_id=dashboard_id,
+        token=token,
+        http_client=http_client,
+        database_id=database_id,
+    ):
+        event_type = event["type"]
 
-    for iteration in range(settings.AGENT_MAX_ITERATIONS):
-        available_tools = _get_available_tools(inspect_count)
-        msg = await generate_with_tools(messages, available_tools, stage="agent")
+        if event_type == "finish":
+            # charts_built is tracked inside stream_agent and included in finish
+            charts_built = event.get("charts_built", [])
 
-        messages.append(_build_assistant_message(msg))
-
-        if not msg.tool_calls:
-            logger.warning("Agent returned text at iteration %d — treating as finish", iteration)
-            break
-
-        tool_call = msg.tool_calls[0]
-        tool_name = tool_call.function.name
-        tool_args = json.loads(tool_call.function.arguments)
-
-        if tool_name == "finish":
-            summary = tool_args.get("summary", "Dashboard complete.")
-            trace.append({
-                "step": iteration + 1,
-                "tool": "finish",
-                "reasoning": summary,
-                "observation": {"acknowledged": True},
-            })
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps({"acknowledged": True}),
-            })
-            break
-
-        if tool_name == "inspect_data":
-            observation, trace_entry = await _dispatch_inspect_data(
-                tool_args=tool_args,
-                execute_sql_fn=execute_sql_fn,
-                step=iteration + 1,
-            )
-            inspect_count += 1
-
-        elif tool_name == "build_and_add_chart":
-            observation, trace_entry = await _dispatch_build_and_add_chart(
-                tool_args=tool_args,
-                token=token,
-                http_client=http_client,
-                database_id=database_id,
-                dashboard_id=dashboard_id,
-                field_map=field_map,
-                charts_built=charts_built,
-                step=iteration + 1,
-            )
-
-        else:
-            observation = {"error": f"Unknown tool: {tool_name}"}
-            trace_entry = {
-                "step": iteration + 1,
-                "tool": tool_name,
-                "reasoning": "",
-                "observation": observation,
-            }
-
-        trace.append(trace_entry)
-        messages.append({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": json.dumps(observation),
-        })
+        # Collect trace entries — skip UI-only events that have no trace value
+        if event_type not in ("step_started", "healing"):
+            trace_entry = {k: v for k, v in event.items() if k not in ("type", "charts_built")}
+            trace.append(trace_entry)
 
     return {
         "charts_built": charts_built,

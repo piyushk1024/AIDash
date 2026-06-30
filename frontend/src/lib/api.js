@@ -1,7 +1,7 @@
 const BASE = '/api'
 const TOKEN_KEY = 'dasher_token'
 
-function getToken() {
+export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
 
@@ -125,5 +125,8 @@ export const api = {
 
   runAgent: (datasetId, goal) =>
   request('POST', `/datasets/${datasetId}/dashboard/agent`, goal ? { goal } : {}),
+  
+  agentStreamUrl: (datasetId) =>
+    `${BASE}/datasets/${datasetId}/dashboard/agent/stream`,
   
 }
