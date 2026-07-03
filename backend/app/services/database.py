@@ -62,15 +62,16 @@ async def persist_semantics(
 
 # ── Dashboard plans ───────────────────────────────────────────
 
-async def get_cached_dashboard_plan(pool: asyncpg.Pool, dataset_id: str):
+async def get_cached_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, mode: str | None = None):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
             SELECT plan_json FROM dashboard_plans
             WHERE dataset_id = $1
+              AND ($2::text IS NULL OR COALESCE(plan_json->>'mode', 'pipeline') = $2)
             ORDER BY created_at DESC LIMIT 1
             """,
-            dataset_id,
+            dataset_id, mode,
         )
         return row["plan_json"] if row else None
 

@@ -2,6 +2,7 @@ import json
 from app.services.llm import generate
 from app.config import settings
 from app.services.sqlGuard import validate_sql
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
 
 
 NL_CHART_PROMPT = """
@@ -22,11 +23,9 @@ HARD CONSTRAINTS — non-negotiable:
 - PostgreSQL syntax only
 - SELECT only — never emit DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
 - No semicolons
-- chart_type must match the SQL output shape:
-    - scalar: query returns exactly one row, one column
-    - bar, line, pie: first column is dimension, second column is measure
 - aggregations: COUNT, SUM, AVG, or any valid PostgreSQL aggregate
-- chart types: bar, line, scalar, pie only
+- chart_type must match the SQL output shape and analytical intent:
+{chart_type_guidance}
 
 POSTGRESQL CAPABILITIES — use where appropriate:
 - Window functions: RANK() OVER, SUM() OVER, AVG() OVER
@@ -41,10 +40,12 @@ POSTGRESQL CAPABILITIES — use where appropriate:
 Return ONLY a JSON object with exactly these fields:
 {{
   "chart_title": "string",
-  "chart_type": "bar" | "line" | "scalar" | "pie",
+  "chart_type": "one of the valid chart types listed above",
   "sql": "SELECT ...",
-  "x_alias": "exact column alias used for the dimension in the SQL, null for scalar",
-  "y_alias": "exact column alias used for the measure in the SQL, null for scalar",
+  "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
+  "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
+  "series_alias": "optional — second dimension to group/stack by, only for bar/row",
+  "viz_params": "optional dict — required for gauge/funnel/waterfall/pivot/map, omit otherwise",
   "reasoning": "one sentence explaining what this chart shows"
 }}
 
@@ -102,6 +103,7 @@ async def build_chart_from_prompt(
         field_reference=field_reference,
         column_profile_section=column_profile_section,
         prompt=prompt,
+        chart_type_guidance=CHART_TYPE_GUIDANCE,
     )
 
     raw = await generate(prompt_text, stage="nl_authoring")
@@ -112,5 +114,9 @@ async def build_chart_from_prompt(
         raw = raw.split("```")[1].split("```")[0].strip()
 
     chart = json.loads(raw)
+
+    if chart.get("chart_type") not in CHART_TYPE_VALUES:
+        raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")
+
     validate_sql(chart["sql"], context=chart.get("chart_title", ""))
     return chart

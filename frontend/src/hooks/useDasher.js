@@ -112,6 +112,7 @@ export function useDasher() {
     try {
       const result = await api.createDashboard(datasetId);
       setDashboardResult(result);
+      setAgentResult(null);
       setStepStatus("dashboard", "done");
     } catch (e) {
       setStepStatus("dashboard", "error");
@@ -193,6 +194,9 @@ function removeCard(cardId) {
 function setDashboardPublished(value) {
   setDashboardResult(prev => ({ ...prev, published: value }))
 }
+function clearDashboardResult() {
+  setDashboardResult(null);
+}
 
   // Everything a component might need, returned as one object
   return {
@@ -219,6 +223,7 @@ function setDashboardPublished(value) {
     replaceCard,
     removeCard,
     setDashboardPublished,
-    setAgentResult
+    setAgentResult,
+    clearDashboardResult
   };
 }

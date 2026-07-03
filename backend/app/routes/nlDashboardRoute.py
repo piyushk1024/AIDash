@@ -19,6 +19,7 @@ from app.services.metabaseClient import (
 )
 from app.dependencies import get_db, get_http_client, get_app_state, require_editor
 from app.config import settings
+from app.services.llm import LLMUnavailableError
 
 router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -76,15 +77,17 @@ async def add_nl_chart(
     table_name = metadata["table_name"]
 
     profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
-
-    chart_spec = await build_chart_from_prompt(
-        prompt=body.prompt,
-        field_map=field_map,
-        semantics=semantics,
-        table_name=table_name,
-        selected_columns=body.selected_columns,
-        profile=profile,
-    )
+    try: 
+        chart_spec = await build_chart_from_prompt(
+            prompt=body.prompt,
+            field_map=field_map,
+            semantics=semantics,
+            table_name=table_name,
+            selected_columns=body.selected_columns,
+            profile=profile,
+        )    
+    except LLMUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
     token = await get_session_token(http_client, app_state)
     database_id = await get_database_id(token, http_client)
@@ -119,14 +122,17 @@ async def edit_nl_chart(
 
     profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
 
-    chart_spec = await build_chart_from_prompt(
-        prompt=body.prompt,
-        field_map=field_map,
-        semantics=semantics,
-        table_name=table_name,
-        selected_columns=body.selected_columns,
-        profile=profile,
-    )
+    try:
+        chart_spec = await build_chart_from_prompt(
+            prompt=body.prompt,
+            field_map=field_map,
+            semantics=semantics,
+            table_name=table_name,
+            selected_columns=body.selected_columns,
+            profile=profile,
+        )
+    except LLMUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
     token = await get_session_token(http_client, app_state)
     database_id = await get_database_id(token, http_client)

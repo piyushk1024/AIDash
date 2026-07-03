@@ -1,12 +1,18 @@
-# app/services/metabaseClient.py
 import asyncio
 import time
 import httpx
+import logging
 from app.config import settings
+from app.schemas.chartTypes import (
+    NO_VIZ_SETTINGS_TYPES,
+    DIMENSION_MEASURE_TYPES,
+    MEASURE_PAIR_TYPES,
+    SERIES_CAPABLE_TYPES,
+    PASSTHROUGH_TYPES,
+)
 
 METABASE_URL = settings.METABASE_URL
 METABASE_PUBLIC_URL = settings.METABASE_PUBLIC_URL
-
 
 async def get_session_token(http_client: httpx.AsyncClient, app_state) -> str:
     now = time.monotonic()
@@ -39,6 +45,52 @@ async def get_database_id(session_token: str, http_client: httpx.AsyncClient) ->
     return match["id"]
 
 
+def _build_viz_settings(
+    chart_type: str,
+    x_alias: str | None,
+    y_alias: str | None,
+    series_alias: str | None,
+    viz_params: dict | None,
+) -> dict:
+    """
+    Tier A (scalar/bar/line/pie/row/scatter/table): Dasher builds
+    visualization_settings itself from x_alias/y_alias/series_alias —
+    the LLM never hand-writes Metabase viz JSON for these.
+
+    Tier B (gauge/funnel/waterfall/pivot/map): the shape varies per
+    instance (which bands, which stage order, which columns split
+    where), so the LLM supplies viz_params directly. Raising here on a
+    missing/empty dict routes the failure through the same two-stage
+    self-healing cycle every other chart error already goes through —
+    Dasher doesn't try to guess a shape on the LLM's behalf.
+    """
+    if chart_type in PASSTHROUGH_TYPES:
+        if not isinstance(viz_params, dict) or not viz_params:
+            raise ValueError(
+                f"chart_type '{chart_type}' requires a non-empty viz_params dict."
+            )
+        return viz_params
+
+    if chart_type in NO_VIZ_SETTINGS_TYPES:
+        return {}
+
+    if chart_type in DIMENSION_MEASURE_TYPES or chart_type in MEASURE_PAIR_TYPES:
+        if not (x_alias and y_alias):
+            return {}
+        dimensions = [x_alias]
+        if chart_type in SERIES_CAPABLE_TYPES and series_alias:
+            dimensions.append(series_alias)
+        return {
+            "graph.dimensions": dimensions,
+            "graph.metrics": [y_alias],
+        }
+
+    # Unrecognised chart_type — leave viz_settings empty rather than
+    # guess a shape. Metabase renders with defaults; self-healer catches
+    # anything that actually breaks.
+    return {}
+
+
 async def create_card(
     session_token: str,
     http_client: httpx.AsyncClient,
@@ -48,13 +100,10 @@ async def create_card(
     database_id: int,
     x_alias: str | None = None,
     y_alias: str | None = None,
+    series_alias: str | None = None,
+    viz_params: dict | None = None,
 ) -> dict:
-    viz_settings = {}
-    if chart_type != "scalar" and x_alias and y_alias:
-        viz_settings = {
-            "graph.dimensions": [x_alias],
-            "graph.metrics": [y_alias],
-        }
+    viz_settings = _build_viz_settings(chart_type, x_alias, y_alias, series_alias, viz_params)
 
     payload = {
         "name": chart_title,
@@ -74,7 +123,6 @@ async def create_card(
     )
     resp.raise_for_status()
     return resp.json()
-
 
 async def create_dashboard(
     session_token: str,
@@ -189,6 +237,23 @@ async def get_dashboard_card_ids(
     resp.raise_for_status()
     return [dc["card_id"] for dc in resp.json().get("dashcards", [])]
 
+async def get_dashboard_cards(
+    session_token: str,
+    http_client: httpx.AsyncClient,
+    dashboard_id: int,
+) -> list[dict]:
+    """Returns [{card_id, chart_title}] for diffing against a new plan."""
+    resp = await http_client.get(
+        f"{METABASE_URL}/api/dashboard/{dashboard_id}",
+        headers={"X-Metabase-Session": session_token},
+    )
+    resp.raise_for_status()
+    return [
+        {"card_id": dc["card_id"], "chart_title": dc["card"]["name"]}
+        for dc in resp.json().get("dashcards", [])
+        if dc.get("card")
+    ]
+
 
 async def delete_card(
     session_token: str,
@@ -265,3 +330,67 @@ async def validate_card_query(
     )
     data = resp.json()
     return data.get("error") or data.get("data", {}).get("error")
+
+async def update_card(
+    session_token: str,
+    http_client: httpx.AsyncClient,
+    card_id: int,
+    chart_title: str,
+    chart_type: str,
+    sql: str,
+    database_id: int,
+    x_alias: str | None = None,
+    y_alias: str | None = None,
+    series_alias: str | None = None,
+    viz_params: dict | None = None,
+) -> dict:
+    viz_settings = _build_viz_settings(chart_type, x_alias, y_alias, series_alias, viz_params)
+    payload = {
+        "name": chart_title,
+        "display": chart_type,
+        "dataset_query": {
+            "type": "native",
+            "database": database_id,
+            "native": {"query": sql},
+        },
+        "visualization_settings": viz_settings,
+    }
+    resp = await http_client.put(
+        f"{METABASE_URL}/api/card/{card_id}",
+        json=payload,
+        headers={"X-Metabase-Session": session_token},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def sync_dashboard_cards(
+    session_token: str,
+    http_client: httpx.AsyncClient,
+    dashboard_id: int,
+    card_ids_in_order: list[int],
+) -> None:
+    dashcards = [
+        {
+            "id":-(i + 1),
+            "card_id": card_id,
+            "row": (i // 2) * 4,
+            "col": (i % 2) * 12,
+            "size_x": 12,
+            "size_y": 4,
+            "parameter_mappings": [],
+            "visualization_settings": {},
+        }
+        for i, card_id in enumerate(card_ids_in_order)
+    ]
+    resp = await http_client.put(
+        f"{METABASE_URL}/api/dashboard/{dashboard_id}",
+        json={"dashcards": dashcards},
+        headers={"X-Metabase-Session": session_token},
+    )
+    
+    if resp.status_code >= 400:
+      logger = logging.getLogger(__name__)
+      logger.error("sync_dashboard_cards failed: %s", resp.text)
+
+    resp.raise_for_status()

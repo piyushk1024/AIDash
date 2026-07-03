@@ -1,4 +1,5 @@
 # app/services/agentTools.py
+from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_GUIDANCE
 
 TOOL_SCHEMAS = [
     {
@@ -48,11 +49,11 @@ TOOL_SCHEMAS = [
                     },
                     "chart_type": {
                         "type": "string",
-                        "enum": ["bar", "line", "scalar", "pie"],
+                        "enum": CHART_TYPE_VALUES,
                         "description": (
-                            "Must match the SQL output shape: "
-                            "'scalar' for exactly one row and one column; "
-                            "'bar', 'line', or 'pie' for a dimension column followed by a measure column."
+                            "Must match the SQL output shape and the chart's analytical "
+                            "intent. See guidance below for how to pick and how to "
+                            "configure each type:\n" + CHART_TYPE_GUIDANCE
                         ),
                     },
                     "sql": {
@@ -65,11 +66,31 @@ TOOL_SCHEMAS = [
                     },
                     "x_alias": {
                         "type": "string",
-                        "description": "Exact alias of the dimension column in the SQL. Omit for scalar.",
+                        "description": "Exact alias of the dimension column in the SQL. Omit for scalar/table/passthrough types.",
                     },
                     "y_alias": {
                         "type": "string",
-                        "description": "Exact alias of the measure column in the SQL. Omit for scalar.",
+                        "description": "Exact alias of the measure column in the SQL. Omit for scalar/table/passthrough types.",
+                    },
+                    "series_alias": {
+                        "type": "string",
+                        "description": (
+                            "Optional. Only for bar/row charts. Exact alias of a second "
+                            "dimension to group or stack by within each x-axis category. "
+                            "Use this instead of building separate charts when the goal "
+                            "requires comparing across two dimensions at once."
+                        ),
+                    },
+                    "viz_params": {
+                        "type": "object",
+                        "description": (
+                            "Required for gauge, funnel, waterfall, pivot, and map chart "
+                            "types. A dict of Metabase visualization_settings matching "
+                            "what that chart type needs (e.g. segments for gauge, "
+                            "column_split for pivot). You decide the values yourself, "
+                            "typically by computing them via inspect_data first. "
+                            "Omit for all other chart types."
+                        ),
                     },
                     "reasoning": {
                         "type": "string",
@@ -117,9 +138,16 @@ Goal: {goal}
 Rules:
 - Use inspect_data to investigate the data before building charts. Let what you find shape what you build.
 - Use build_and_add_chart to add charts that directly address the goal.
-- Build between 3 and 5 charts total.
+- Build as many charts as the goal genuinely requires — don't build a chart just
+  to hit a count. A narrow goal may need only 2-3 charts; a genuinely multi-faceted
+  one may need more.
+- When the goal involves multiple factors together (e.g. "does X affect Y after
+  accounting for Z"), prefer one chart that combines the relevant dimensions
+  (see series_alias below) over several charts that each address only one factor.
 - Call finish when the goal is satisfied.
 - All SQL: double-quote all table and column names, PostgreSQL syntax, no semicolons.
-- chart_type must match the SQL output: scalar for one row/one column, bar/line/pie for dimension + measure.
 - Inspection queries must be aggregate-focused — never SELECT *.
+
+Chart type guidance:
+{chart_type_guidance}
 """

@@ -1,6 +1,5 @@
-# app/services/cardBuilder.py
 import logging
-from app.services.metabaseClient import create_card, validate_card_query, delete_card
+from app.services.metabaseClient import create_card, validate_card_query, delete_card, update_card
 from app.services.selfHealer import heal_chart_spec
 import httpx
 
@@ -23,6 +22,7 @@ async def create_card_with_healing(
             token, http_client, chart["chart_title"], chart["chart_type"],
             chart["sql"], database_id,
             x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+            series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
         )
     except Exception as e:
         logger.warning(f"create_card failed for '{chart.get('chart_title')}': {e}")
@@ -32,6 +32,7 @@ async def create_card_with_healing(
                 token, http_client, chart["chart_title"], chart["chart_type"],
                 chart["sql"], database_id,
                 x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+                series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
             )
             healed = True
         except Exception as e2:
@@ -51,6 +52,7 @@ async def create_card_with_healing(
                 token, http_client, chart["chart_title"], chart["chart_type"],
                 chart["sql"], database_id,
                 x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+                series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
             )
             retry_error = await validate_card_query(token, http_client, card["id"])
             if retry_error:
@@ -104,3 +106,63 @@ def _error_entry(chart: dict) -> dict:
         "chart_type":  chart.get("chart_type"),
         "failed":      True,
     }
+
+async def update_card_with_healing(
+    token: str,
+    http_client: httpx.AsyncClient,
+    chart: dict,
+    card_id: int,
+    field_map: dict,
+    database_id: int,
+) -> tuple[dict | None, dict | None]:
+    original_chart = chart.copy()
+    healed = False
+
+    try:
+        card = await update_card(
+            token, http_client, card_id, chart["chart_title"], chart["chart_type"],
+            chart["sql"], database_id,
+            x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+            series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
+        )
+    except Exception as e:
+        logger.warning(f"update_card failed for '{chart.get('chart_title')}': {e}")
+        try:
+            chart = await heal_chart_spec(chart, str(e), field_map)
+            card = await update_card(
+                token, http_client, card_id, chart["chart_title"], chart["chart_type"],
+                chart["sql"], database_id,
+                x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+                series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
+            )
+            healed = True
+        except Exception as e2:
+            logger.error("Chart update '%s' failed permanently. stage1_error=%s, heal_error=%s",
+                        original_chart.get("chart_title"), str(e), str(e2))
+            return None, _error_entry(original_chart)
+
+    query_error = await validate_card_query(token, http_client, card_id)
+    if query_error:
+        pre_heal_chart = chart.copy()
+        try:
+            chart = await heal_chart_spec(chart, query_error, field_map)
+            card = await update_card(
+                token, http_client, card_id, chart["chart_title"], chart["chart_type"],
+                chart["sql"], database_id,
+                x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
+                series_alias=chart.get("series_alias"), viz_params=chart.get("viz_params"),
+            )
+            retry_error = await validate_card_query(token, http_client, card_id)
+            if retry_error:
+                logger.error("Chart update '%s' failed permanently. query_error=%s, retry_error=%s",
+                    pre_heal_chart.get("chart_title"), query_error, retry_error)
+                return None, _error_entry(pre_heal_chart)
+            healed = True
+        except Exception as e3:
+            logger.error("Chart update '%s' heal raised exception. query_error=%s, exception=%s",
+                         pre_heal_chart.get("chart_title"), query_error, str(e3))
+            return None, _error_entry(pre_heal_chart)
+
+    if healed:
+        return _healed_entry(original_chart, chart, card_id), None
+    return _clean_entry(chart, card_id), None

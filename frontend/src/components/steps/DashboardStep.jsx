@@ -26,7 +26,7 @@ function StepHeader({ title }) {
 export default function DashboardStep({ dasher, isActive }) {
   const {
     createDashboard, status, errors, dashboardResult, plan, datasetId,
-    uploadResult, addCard, replaceCard, removeCard, setDashboardPublished, agentResult, setAgentResult
+    uploadResult, addCard, replaceCard, removeCard, setDashboardPublished, agentResult, setAgentResult,clearDashboardResult
   } = dasher
 
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -95,6 +95,7 @@ export default function DashboardStep({ dasher, isActive }) {
       dashboard_id: finishEvent.dashboard_id,
       published: false,
     })
+    dasher.clearDashboardResult()
     setShowPreBuild(false)
   }
   }
@@ -222,6 +223,10 @@ export default function DashboardStep({ dasher, isActive }) {
 
   if (!isActive && !showPreBuild) return null
 
+  function switchMode(newMode) {
+  setMode(newMode)
+  }
+
   // Pre-build view
   return (
     <div className="animate-fade-in mt-12">
@@ -232,13 +237,13 @@ export default function DashboardStep({ dasher, isActive }) {
 
       <div className="flex items-center gap-1 mb-6 p-1 border border-neutral-800 rounded w-fit">
         <button
-          onClick={() => setMode('pipeline')}
+          onClick={() => switchMode('pipeline') }
           className={`px-3 py-1 rounded font-mono text-xs tracking-wider uppercase transition-colors ${mode === 'pipeline' ? 'bg-neutral-800 text-neutral-200' : 'text-neutral-600 hover:text-neutral-400'}`}
         >
           Standard
         </button>
         <button
-          onClick={() => setMode('agent')}
+          onClick={() => switchMode('agent')}
           className={`px-3 py-1 rounded font-mono text-xs tracking-wider uppercase transition-colors ${mode === 'agent' ? 'bg-neutral-800 text-neutral-200' : 'text-neutral-600 hover:text-neutral-400'}`}
         >
           Agentic
@@ -302,7 +307,11 @@ export default function DashboardStep({ dasher, isActive }) {
 
       {mode === 'pipeline' ? (
         <button
-          onClick={() => { setShowPreBuild(false); createDashboard() }}
+          onClick={() =>  {
+            if (agentResult && !window.confirm('This will replace your Agentic dashboard. Continue?')) return
+            setShowPreBuild(false)
+            createDashboard()
+          }}
           disabled={isLoading}
           className="px-6 py-2 rounded font-mono text-xs tracking-widest uppercase transition-all duration-200 disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300 enabled:cursor-pointer"
         >
@@ -310,7 +319,9 @@ export default function DashboardStep({ dasher, isActive }) {
         </button>
       ) : (
         <button
-          onClick={handleAgentRun}
+          onClick={() => {if (dashboardResult && !window.confirm('This will replace your Standard dashboard. Continue?')) return
+                  handleAgentRun()
+                }}
           disabled={streaming}
           className="px-6 py-2 rounded font-mono text-xs tracking-widest uppercase transition-all duration-200 disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300 enabled:cursor-pointer"
         >

@@ -6,9 +6,11 @@ from app.services.database import (
     get_cached_semantics,
     get_dataset_metadata,
     get_dataset_owner,
+    get_cached_dashboard_plan,
     persist_metabase_dashboard_id,
     persist_dashboard_plan,
     update_dashboard_plan,
+    persist_profile_json,
 )
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
@@ -18,6 +20,9 @@ from app.services.metabaseClient import (
     get_database_id,
     create_dashboard,
     create_public_link,
+    get_dashboard_card_ids,
+    delete_dashboard,
+    delete_card,
 )
 from app.dependencies import get_db, get_http_client, get_app_state, require_editor
 from app.config import settings
@@ -60,9 +65,23 @@ async def _setup_agent_run(dataset_id, db, http_client, app_state, current_user,
         raise HTTPException(status_code=404, detail="Dataset file not found.")
 
     profile = profile_csv(matches[0], dataset_id)
+    await persist_profile_json(db, dataset_id, profile)
 
     token = await get_session_token(http_client, app_state)
     database_id = await get_database_id(token, http_client)
+
+    existing_dashboard_id = metadata.get("metabase_dashboard_id")
+    if existing_dashboard_id:
+        owning_plan = await get_cached_dashboard_plan(db, dataset_id)
+        owning_mode = owning_plan.get("mode", "pipeline") if owning_plan else "pipeline"
+        if owning_mode != "agent":
+            try:
+                card_ids = await get_dashboard_card_ids(token, http_client, existing_dashboard_id)
+                await delete_dashboard(token, http_client, existing_dashboard_id)
+                for card_id in card_ids:
+                    await delete_card(token, http_client, card_id)
+            except Exception:
+                pass
 
     dashboard_title = f"{metadata['table_name']} — Agent"
     dashboard_id = await create_dashboard(token, http_client, dashboard_title)
@@ -190,6 +209,8 @@ async def run_agent_dashboard_stream(
                         "sql": event["sql"],
                         "x_alias": event.get("x_alias"),
                         "y_alias": event.get("y_alias"),
+                        "series_alias": event.get("series_alias"),
+                        "viz_params": event.get("viz_params"),
                         "card_id": event["card_id"],
                         "healed": event["healed"],
                     })

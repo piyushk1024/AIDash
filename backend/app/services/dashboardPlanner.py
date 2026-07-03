@@ -2,6 +2,7 @@ import json
 from app.services.llm import generate
 from app.config import settings
 from app.services.sqlGuard import validate_sql
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
 
 
 def _build_chartable_context(semantics: dict, profile: dict, field_map: dict) -> tuple[set, dict, list]:
@@ -55,8 +56,9 @@ Dataset profile (stats, value_counts, correlations, grouped_stats):
 ---
 
 Reasoning pass:
-Before planning charts, identify the 5 to 7 most analytically interesting questions 
-this dataset can answer. Consider:
+Before planning charts, identify the most analytically interesting questions
+this dataset can answer — typically 5 to 7, but fewer if the data genuinely
+doesn't support that many, more if it's unusually rich. Consider:
 - Rankings and extremes (top/bottom performers)
 - Distributions across categorical dimensions
 - Trends over time where date columns exist
@@ -64,6 +66,10 @@ this dataset can answer. Consider:
 - Derived metrics: ratios, rates, percentages computed in SQL
 - Statistical spread: percentiles, variance
 - Comparative analysis: how does one segment differ from another
+- Multi-factor questions (e.g. "does X vary by Y after accounting for Z") —
+  these are usually best answered by one chart combining the relevant
+  dimensions (see series_alias below), not several charts that each
+  address only one factor
 
 Chart planning pass:
 For each question, plan one chart. Write PostgreSQL SQL that answers it directly.
@@ -75,10 +81,9 @@ HARD CONSTRAINTS — non-negotiable:
 - PostgreSQL syntax only
 - SELECT only — never emit DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
 - No semicolons
-- chart_type must match the SQL output shape:
-    - scalar: query returns exactly one row, one column
-    - bar, line, pie: first column is dimension, second column is measure
 - No two charts may have the same chart_title
+- chart_type must match the SQL output shape and analytical intent:
+{chart_type_guidance}
 
 POSTGRESQL CAPABILITIES — use these where analytically justified:
 - Window functions: RANK() OVER, SUM() OVER, AVG() OVER (PARTITION BY / ORDER BY)
@@ -97,16 +102,18 @@ Return ONLY a JSON object with exactly these fields:
   "charts": [
     {{
       "chart_title": "string",
-      "chart_type": "bar" | "line" | "scalar" | "pie",
+      "chart_type": "one of the valid chart types listed above",
       "sql": "SELECT ...",
-      "x_alias": "exact column alias used for the dimension in the SQL, null for scalar",
-      "y_alias": "exact column alias used for the measure in the SQL, null for scalar",
+      "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
+      "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
+      "series_alias": "optional — second dimension to group/stack by, only for bar/row",
+      "viz_params": "optional dict — required for gauge/funnel/waterfall/pivot/map, omit otherwise",
       "reasoning": "one sentence tying this chart to a specific analytical question"
     }}
   ]
 }}
 
-Aim for 5 to 7 charts. Raw JSON only, no markdown.
+Raw JSON only, no markdown.
 """
 
 
@@ -134,6 +141,7 @@ async def generate_dashboard_plan(
         dataset_id=dataset_id,
         field_reference=field_reference,
         profile_summary=json.dumps(profile_summary, indent=2),
+        chart_type_guidance=CHART_TYPE_GUIDANCE,
     )
 
     raw = await generate(prompt, stage="planner")
@@ -145,9 +153,13 @@ async def generate_dashboard_plan(
     parsed = json.loads(raw)
     parsed["dataset_id"] = dataset_id
 
-    # Validate SQL for each chart — drop charts that fail the guard
+    # Validate each chart — drop charts that fail the SQL guard or carry
+    # an unrecognised chart_type. Same fail-soft pattern for both checks:
+    # a bad chart is dropped from the plan rather than aborting the whole run.
     safe_charts = []
     for chart in parsed.get("charts", []):
+        if chart.get("chart_type") not in CHART_TYPE_VALUES:
+            continue
         try:
             validate_sql(chart["sql"], context=chart.get("chart_title", ""))
             safe_charts.append(chart)

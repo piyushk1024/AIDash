@@ -5,17 +5,21 @@ from app.services.database import (
     get_cached_dashboard_plan,
     persist_dashboard_plan,
     get_dataset_metadata,
-    get_dataset_owner
+    get_dataset_owner,
+    persist_profile_json
 )
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
 from app.config import settings
+from app.schemas.chartTypes import CHART_TYPE_VALUES
+from app.services.llm import LLMUnavailableError
 
 router = APIRouter()
 
 UPLOAD_DIR = settings.UPLOAD_DIR
 
-VALID_CHART_TYPES = {"bar", "line", "scalar", "pie"}
+# VALID_CHART_TYPES = {"bar", "line", "scalar", "pie"}
+
 
 
 def validate_and_clean_charts(charts: list) -> list:
@@ -28,7 +32,7 @@ def validate_and_clean_charts(charts: list) -> list:
             continue
 
         # chart_type must be valid
-        if chart["chart_type"] not in VALID_CHART_TYPES:
+        if chart["chart_type"] not in CHART_TYPE_VALUES:
             continue
 
         # Deduplicate on title
@@ -48,7 +52,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     owner = await get_dataset_owner(db, dataset_id)    
     if owner != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    cached = await get_cached_dashboard_plan(db, dataset_id)
+    cached = await get_cached_dashboard_plan(db, dataset_id, mode="pipeline")
     if cached:
         return cached
     
@@ -65,12 +69,17 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found")
     profile = profile_csv(matches[0], dataset_id)
+    await persist_profile_json(db, dataset_id, profile)
 
     metadata = await get_dataset_metadata(db, dataset_id)
     field_map = metadata["field_map"] if metadata else {}
     table_name = metadata["table_name"] if metadata else ""
 
-    plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
+    #plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
+    try:
+        plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
+    except LLMUnavailableError as e:
+        raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
     plan["charts"] = validate_and_clean_charts(plan["charts"])
 
@@ -80,5 +89,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
             detail="No valid charts could be generated. Try re-running semantics inference.",
         )
 
+    plan["mode"] = "pipeline"
     await persist_dashboard_plan(db, dataset_id, plan)
+    
     return plan

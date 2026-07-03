@@ -6,6 +6,7 @@ from app.services.sqlGuard import validate_sql
 from app.services.cardBuilder import create_card_with_healing
 from app.services.metabaseClient import execute_sql_query, add_card_to_dashboard
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -121,6 +122,8 @@ async def _dispatch_build_and_add_chart(
         "sql": tool_args["sql"],
         "x_alias": tool_args.get("x_alias"),
         "y_alias": tool_args.get("y_alias"),
+        "series_alias": tool_args.get("series_alias"),
+        "viz_params": tool_args.get("viz_params"),
     }
     reasoning = tool_args.get("reasoning", "")
 
@@ -160,6 +163,8 @@ async def _dispatch_build_and_add_chart(
         "reasoning": reasoning,
         "chart_title": chart_spec["chart_title"],
         "chart_type": chart_spec["chart_type"],
+        "series_alias": chart_spec["series_alias"],
+        "viz_params": chart_spec["viz_params"],
         "observation": observation,
     }
     return observation, trace_entry, healed
@@ -184,6 +189,7 @@ async def stream_agent(
         field_reference=field_reference,
         profile_summary=profile_summary,
         goal=goal,
+        chart_type_guidance=CHART_TYPE_GUIDANCE,
     )
 
     messages = [{"role": "user", "content": system_content}]
@@ -266,6 +272,8 @@ async def stream_agent(
                     "sql": tool_args["sql"],
                     "x_alias": tool_args.get("x_alias"),
                     "y_alias": tool_args.get("y_alias"),
+                    "series_alias": tool_args.get("series_alias"),
+                    "viz_params": tool_args.get("viz_params"),
                     "card_id": observation["card_id"],
                     "healed": healed,
                 }

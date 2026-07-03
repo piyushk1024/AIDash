@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     DB_POOL_MAX: int = 10
     METABASE_SYNC_TIMEOUT: int = 60
     DATABASE_URL: str
+    DATABASE_URL_LOCAL: str = ""   # host-side override for standalone scripts run outside Docker
     METABASE_URL: str
     METABASE_PUBLIC_URL: str = "http://localhost:3000"
     METABASE_USERNAME: str
