@@ -116,8 +116,8 @@ def print_report(dasher: dict, naive: dict, csv_path: Path, max_rows: int):
     dasher_quality = score_semantics(dasher["response"], csv_path)
     naive_quality  = score_semantics(naive["response"],  csv_path)
 
-    print(f"\n---\n")
-    print(f"## Cost Faceoff: Dashboard Semantic Inference\n")
+    print("\n---\n")
+    print("## Cost Faceoff: Dashboard Semantic Inference\n")
     print(f"Dataset: `{csv_path.name}` — {total_rows:,} rows  ")
     print(f"Naive row limit: {max_rows}  ")
     print(f"Model: `{settings.LLM_MODEL}`  ")
@@ -134,7 +134,7 @@ def print_report(dasher: dict, naive: dict, csv_path: Path, max_rows: int):
     print(f"| Semantics quality| {dasher_quality} | {naive_quality} |")
 
     print(f"\n**Naive approach used {ratio}x more input tokens for {max_rows} rows.**")
-    print(f"Dasher token usage is O(columns). Naive is O(rows × columns).")
+    print("Dasher token usage is O(columns). Naive is O(rows × columns).")
     print(f"At full dataset scale ({total_rows:,} rows), naive would be impractical.")
 
 

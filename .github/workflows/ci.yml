@@ -16,7 +16,7 @@ jobs:
 
   eslint:
       runs-on: ubuntu-latest
-      continue-on-error: true
+      continue-on-error: true      
       steps:
         - uses: actions/checkout@v4
         - uses: actions/setup-node@v4
@@ -37,3 +37,12 @@ jobs:
           python-version: '3.11'
       - run: pip install -r backend/requirements.txt
       - run: pytest backend/
+        env:
+            UPLOAD_DIR: /tmp/uploads
+            LLM_API_KEY: test-key
+            DATABASE_URL: postgresql://test:test@localhost/test
+            METABASE_URL: http://localhost:3000
+            METABASE_USERNAME: test
+            METABASE_PASSWORD: test
+            METABASE_DB_NAME: test
+            JWT_SECRET: test-secret

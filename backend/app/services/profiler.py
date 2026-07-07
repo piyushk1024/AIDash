@@ -18,14 +18,14 @@ def infer_basic_type(values: list[str]) -> str:
         for v in non_empty:
             int(str(v))
         return "integer"
-    except:
+    except (ValueError, TypeError): 
         pass
 
     try:
         for v in non_empty:
             float(str(v))
         return "float"
-    except:
+    except (ValueError, TypeError):
         pass
 
     return "string"

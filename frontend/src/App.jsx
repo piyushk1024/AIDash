@@ -17,7 +17,45 @@ const STEPS = [
   { key: 'dashboard', number: '04', label: 'Build Dashboard' },
 ]
 
-// Inline placeholder — replaced by AuthPage.jsx next step
+function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
+  return (
+    <header className="border-b border-neutral-200 dark:border-neutral-800 px-8 py-4 flex items-center justify-between sticky top-0 bg-white dark:bg-neutral-950 z-10">
+      <div className="flex items-center gap-3">
+        <div className="w-5 h-5 bg-amber-400 rounded-sm rotate-45 shrink-0" />
+        <span className="font-mono text-sm tracking-widest uppercase text-neutral-500 dark:text-neutral-400">
+          Dasher
+        </span>
+      </div>
+      <div className="flex items-center gap-4">
+        {phase === 'wizard' && (
+          <button
+            onClick={onGoHome}
+            className="flex items-center gap-1.5 font-mono text-xs text-neutral-400 hover:text-amber-400 transition-colors tracking-wider uppercase group"
+          >
+            <span className="group-hover:-translate-x-0.5 transition-transform duration-150">←</span>
+            <span>Home</span>
+          </button>
+        )}
+        <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+          {user?.username}
+        </span>
+        <button
+          onClick={onLogout}
+          className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors tracking-wider uppercase"
+        >
+          Sign out
+        </button>
+        <button
+          onClick={() => onToggleDark()}
+          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
+          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          <span className="text-neutral-400 text-xs">{dark ? '☀' : '☾'}</span>
+        </button>
+      </div>
+    </header>
+  )
+}
 
 export default function App() {
   return (
@@ -94,49 +132,18 @@ function DasherApp() {
     setPhase('pick')
   }
 
-  const Header = () => (
-    <header className="border-b border-neutral-200 dark:border-neutral-800 px-8 py-4 flex items-center justify-between sticky top-0 bg-white dark:bg-neutral-950 z-10">
-      <div className="flex items-center gap-3">
-        <div className="w-5 h-5 bg-amber-400 rounded-sm rotate-45 shrink-0" />
-        <span className="font-mono text-sm tracking-widest uppercase text-neutral-500 dark:text-neutral-400">
-          Dasher
-        </span>
-      </div>
-      <div className="flex items-center gap-4">
-        {phase === 'wizard' && (
-          <button
-            onClick={handleGoHome}
-            className="flex items-center gap-1.5 font-mono text-xs text-neutral-400 hover:text-amber-400 transition-colors tracking-wider uppercase group"
-          >
-            <span className="group-hover:-translate-x-0.5 transition-transform duration-150">←</span>
-            <span>Home</span>
-          </button>
-        )}
-        <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
-          {auth.user?.username}
-        </span>
-        <button
-          onClick={auth.logout}
-          className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors tracking-wider uppercase"
-        >
-          Sign out
-        </button>
-        <button
-          onClick={() => setDark(d => !d)}
-          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
-          title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
-        >
-          <span className="text-neutral-400 text-xs">{dark ? '☀' : '☾'}</span>
-        </button>
-      </div>
-    </header>
-  )
-
   if (phase === 'pick') {
     return (
       <div className={dark ? 'dark' : ''}>
         <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
-          <Header />
+          <Header
+            phase={phase}
+            onGoHome={handleGoHome}
+            user={auth.user}
+            onLogout={auth.logout}
+            dark={dark}
+            onToggleDark={() => setDark(d => !d)}
+          />
           <div className="max-w-xl mx-auto px-8 py-16">
             <h1 className="font-mono text-xs tracking-widest uppercase text-neutral-400 mb-1">
               AI-Enabled Dashboarding
@@ -186,7 +193,14 @@ function DasherApp() {
   return (
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
-        <Header />
+        <Header
+          phase={phase}
+          onGoHome={handleGoHome}
+          user={auth.user}
+          onLogout={auth.logout}
+          dark={dark}
+          onToggleDark={() => setDark(d => !d)}
+        />
         <div className="max-w-5xl mx-auto px-8 py-10 flex gap-16">
           <nav className="flex flex-col gap-6 pt-1 shrink-0 w-36">
             {STEPS.map(step => {

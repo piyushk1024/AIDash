@@ -119,7 +119,7 @@ async def update_card_with_healing(
     healed = False
 
     try:
-        card = await update_card(
+        await update_card(
             token, http_client, card_id, chart["chart_title"], chart["chart_type"],
             chart["sql"], database_id,
             x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
@@ -129,7 +129,7 @@ async def update_card_with_healing(
         logger.warning(f"update_card failed for '{chart.get('chart_title')}': {e}")
         try:
             chart = await heal_chart_spec(chart, str(e), field_map)
-            card = await update_card(
+            await update_card(
                 token, http_client, card_id, chart["chart_title"], chart["chart_type"],
                 chart["sql"], database_id,
                 x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),
@@ -146,7 +146,7 @@ async def update_card_with_healing(
         pre_heal_chart = chart.copy()
         try:
             chart = await heal_chart_spec(chart, query_error, field_map)
-            card = await update_card(
+            await update_card(
                 token, http_client, card_id, chart["chart_title"], chart["chart_type"],
                 chart["sql"], database_id,
                 x_alias=chart.get("x_alias"), y_alias=chart.get("y_alias"),

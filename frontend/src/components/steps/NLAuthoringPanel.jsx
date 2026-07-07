@@ -183,7 +183,7 @@ export default function NLAuthoringPanel({ datasetId, fieldMap, cards, onCardAdd
     try {
       await api.deleteNLChart(datasetId, cardId)
       onCardDeleted(cardId)
-    } catch (e) {
+    } catch {
       // silently ignore — card stays in list
     }
   }

@@ -1,4 +1,3 @@
-from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_db, get_http_client, get_app_state, require_editor
 from app.config import settings

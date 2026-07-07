@@ -39,7 +39,7 @@ export default function InsightsPanel({ datasetId }) {
         shownCount: 1,
       }, ...prev.map(e => ({ ...e, expanded: false }))])
       setPrompt('')
-    } catch (e) {
+    } catch {
       setError('Something went wrong. Try again.')
     } finally {
       setLoading(false)

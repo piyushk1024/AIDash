@@ -1,4 +1,3 @@
-from pathlib import Path
 from fastapi import APIRouter, HTTPException, Depends
 from app.config import settings
 from app.services.profiler import profile_csv

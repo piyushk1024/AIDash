@@ -1,6 +1,5 @@
 import json
 from app.services.llm import generate
-from app.config import settings
 from app.services.sqlGuard import validate_sql
 from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
 

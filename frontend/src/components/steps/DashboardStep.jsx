@@ -10,7 +10,7 @@ import { api } from '../../lib/api'
 function toTraceEntries(events) {
   return events
     .filter(e => e.type !== 'step_started' && e.type !== 'healing')
-    .map(({ type, charts_built, dashboard_id, public_url, ...rest }) => rest)
+    .map(({ charts_built: _, dashboard_id: __, public_url: ___, type: ____, ...rest }) => rest)
 }
 
 function StepHeader({ title }) {
@@ -26,7 +26,7 @@ function StepHeader({ title }) {
 export default function DashboardStep({ dasher, isActive }) {
   const {
     createDashboard, status, errors, dashboardResult, plan, datasetId,
-    uploadResult, addCard, replaceCard, removeCard, setDashboardPublished, agentResult, setAgentResult,clearDashboardResult
+    uploadResult, addCard, replaceCard, removeCard, setDashboardPublished, agentResult, setAgentResult,//clearDashboardResult
   } = dasher
 
   const [activeTab, setActiveTab] = useState('dashboard')
@@ -67,7 +67,7 @@ export default function DashboardStep({ dasher, isActive }) {
         setDashboardPublished(result.published)
       }
       setDashboardPublished(result.published)
-    } catch (e) {
+    } catch {
       // silently ignore — button reverts to prior state
     } finally {
       setPublishing(false)

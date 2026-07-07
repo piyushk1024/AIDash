@@ -1,4 +1,3 @@
-from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.schemas.semantics import (

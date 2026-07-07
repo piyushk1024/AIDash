@@ -75,7 +75,7 @@ function ChartCard({ chart }) {
   const typeColour = TYPE_COLOUR[chart.chart_type] ?? 'text-neutral-400 border-neutral-700 bg-neutral-800/20'
 
   return (
-    <div className="border border-neutral-200 dark:border-neutral-800 rounded p-3 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors duration-150">
+    <div className={`border rounded p-3 hover:border-neutral-300 dark:hover:border-neutral-700 transition-colors duration-150 ${typeColour}`}>
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1 min-w-0">
           <div className="font-mono text-sm text-neutral-900 dark:text-neutral-100 mb-1">

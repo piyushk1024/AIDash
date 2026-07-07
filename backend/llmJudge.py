@@ -34,7 +34,6 @@ import httpx
 
 from app.config import settings
 from app.services.database import (
-    create_pool,
     get_cached_dashboard_plan,
     get_cached_profile,
     get_cached_semantics,

@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import bcrypt
 import jwt
-from jwt.exceptions import InvalidTokenError
 from app.config import settings
 
 
