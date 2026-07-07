@@ -192,6 +192,8 @@ npm run dev --prefix frontend
 - [x] OpenTelemetry: per-call latency and cost attribution across pipeline stages
 - [x] Two-tier chart type system with LLM-driven Tier B visualization config
 - [x] Non-destructive, diff-based dashboard rebuilds
+- [x] Postman collection: full pipeline chain (upload → semantics → build) with environment-based dataset_id threading
+- [x] CI: ruff, eslint, pytest on push (non-blocking)
 - [ ] LLM-as-judge chart quality evaluation
 - [ ] UI overhaul: one-shot launch card, sidebar dataset picker, per-card iframe grid
 - [ ] LLM evals harness: classification confidence, chart build success rate, plan relevance
