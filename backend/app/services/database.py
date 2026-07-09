@@ -1,20 +1,25 @@
-# app/services/database.py
 import json
 import asyncpg
+import decimal
 from app.config import settings
+
+def json_default(obj):
+    if isinstance(obj, decimal.Decimal):
+        return float(obj)
+    raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
     # Register JSON/JSONB codecs — asyncpg returns raw strings without this
     await conn.set_type_codec(
         'jsonb',
-        encoder=json.dumps,
+        encoder=lambda obj: json.dumps(obj, default=json_default),
         decoder=json.loads,
         schema='pg_catalog',
     )
     await conn.set_type_codec(
         'json',
-        encoder=json.dumps,
+        encoder=lambda obj: json.dumps(obj, default=json_default),
         decoder=json.loads,
         schema='pg_catalog',
     )
@@ -107,7 +112,6 @@ async def persist_dataset_metadata(
     pool: asyncpg.Pool,
     dataset_id: str,
     table_name: str,
-    metabase_table_id: int,
     field_map: dict,
     user_id: str,
     original_filename: str | None = None,
@@ -117,19 +121,18 @@ async def persist_dataset_metadata(
         await conn.execute(
             """
             INSERT INTO dataset_metadata
-                (dataset_id, table_name, metabase_table_id, field_map, user_id,
+                (dataset_id, table_name, field_map, user_id,
                  original_filename, file_checksum)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            VALUES ($1, $2, $3, $4, $5, $6)
             ON CONFLICT (dataset_id) DO UPDATE
             SET table_name        = EXCLUDED.table_name,
-                metabase_table_id = EXCLUDED.metabase_table_id,
                 field_map         = EXCLUDED.field_map,
                 user_id           = EXCLUDED.user_id,
                 original_filename = EXCLUDED.original_filename,
                 file_checksum     = EXCLUDED.file_checksum,
                 updated_at        = NOW()
             """,
-            dataset_id, table_name, metabase_table_id, field_map, user_id,
+            dataset_id, table_name, field_map, user_id,
             original_filename, file_checksum,
         )
 
@@ -137,8 +140,7 @@ async def get_dataset_metadata(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT table_name, metabase_table_id, field_map,
-                   metabase_dashboard_id, public_url, user_id, published
+            SELECT table_name, field_map, published, published_mode, user_id
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -158,30 +160,14 @@ async def get_dataset_by_checksum(pool: asyncpg.Pool, checksum: str, user_id: st
         return row["dataset_id"] if row else None
 
 
-async def persist_metabase_dashboard_id(
-    pool: asyncpg.Pool,
-    dataset_id: str,
-    dashboard_id: int,
-    public_url: str,
-):
-    async with pool.acquire() as conn:
-        await conn.execute(
-            """
-            UPDATE dataset_metadata
-            SET metabase_dashboard_id = $1, public_url = $2
-            WHERE dataset_id = $3
-            """,
-            dashboard_id, public_url, dataset_id,
-        )
-
-
 async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
-    # Single connection for all three queries — consistent read, one pool slot
+    # Single connection for both queries — consistent read, one pool slot.
+    # Both pipeline and agent plans are fetched, since both modes can now
+    # coexist independently (no shared dashboard resource between them).
     async with pool.acquire() as conn:
         metadata = await conn.fetchrow(
             """
-            SELECT table_name, metabase_table_id, field_map,
-                   metabase_dashboard_id, public_url, published
+            SELECT table_name, field_map, published, published_mode
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -195,19 +181,29 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
             dataset_id,
         )
 
-        plan_row = await conn.fetchrow(
+        pipeline_plan_row = await conn.fetchrow(
             """
             SELECT plan_json FROM dashboard_plans
-            WHERE dataset_id = $1
+            WHERE dataset_id = $1 AND COALESCE(plan_json->>'mode', 'pipeline') = 'pipeline'
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            dataset_id,
+        )
+
+        agent_plan_row = await conn.fetchrow(
+            """
+            SELECT plan_json FROM dashboard_plans
+            WHERE dataset_id = $1 AND plan_json->>'mode' = 'agent'
             ORDER BY created_at DESC LIMIT 1
             """,
             dataset_id,
         )
 
     return {
-        "metadata": dict(metadata),
-        "semantics": semantics_row["semantics_json"] if semantics_row else None,
-        "plan":      plan_row["plan_json"] if plan_row else None,
+        "metadata":      dict(metadata),
+        "semantics":     semantics_row["semantics_json"] if semantics_row else None,
+        "pipeline_plan": pipeline_plan_row["plan_json"] if pipeline_plan_row else None,
+        "agent_plan":    agent_plan_row["plan_json"] if agent_plan_row else None,
     }
 
 
@@ -227,22 +223,6 @@ async def delete_dataset(pool: asyncpg.Pool, dataset_id: str, table_name: str):
             await conn.execute(
                 "DELETE FROM dataset_insights WHERE dataset_id = $1", dataset_id
             )
-
-
-async def get_dashboard_cards(pool: asyncpg.Pool, dataset_id: str) -> list[int]:
-    async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            SELECT plan_json FROM dashboard_plans
-            WHERE dataset_id = $1
-            ORDER BY created_at DESC LIMIT 1
-            """,
-            dataset_id,
-        )
-        if not row:
-            return []
-        plan = row["plan_json"]
-        return [c["card_id"] for c in plan.get("charts", []) if c.get("card_id")]
 
 
 # ── Insights ──────────────────────────────────────────────────
@@ -328,7 +308,7 @@ async def get_published_dashboard(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT public_url, published
+            SELECT published, published_mode
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -336,15 +316,15 @@ async def get_published_dashboard(pool: asyncpg.Pool, dataset_id: str):
         )
         return dict(row) if row else None
 
-async def set_published(pool: asyncpg.Pool, dataset_id: str, published: bool):
+async def set_published(pool: asyncpg.Pool, dataset_id: str, published: bool, mode: str | None = None):
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE dataset_metadata
-            SET published = $1
-            WHERE dataset_id = $2
+            SET published = $1, published_mode = $2
+            WHERE dataset_id = $3
             """,
-            published, dataset_id,
+            published, mode, dataset_id,
         )
 
 # ── Profile ───────────────────────────────────────────────────

@@ -6,8 +6,6 @@ from app.services.database import (
     get_cached_semantics,
     get_dataset_metadata,
     get_dataset_owner,
-    get_cached_dashboard_plan,
-    persist_metabase_dashboard_id,
     persist_dashboard_plan,
     update_dashboard_plan,
     persist_profile_json,
@@ -15,16 +13,7 @@ from app.services.database import (
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
 from app.services.llm import LLMUnavailableError
-from app.services.metabaseClient import (
-    get_session_token,
-    get_database_id,
-    create_dashboard,
-    create_public_link,
-    get_dashboard_card_ids,
-    delete_dashboard,
-    delete_card,
-)
-from app.dependencies import get_db, get_http_client, get_app_state, require_editor
+from app.dependencies import get_db, require_editor
 from app.config import settings
 import logging
 
@@ -41,12 +30,14 @@ class AgentRequest(BaseModel):
     goal: str = DEFAULT_GOAL
 
 
-async def _setup_agent_run(dataset_id, db, http_client, app_state, current_user, goal_raw):
+async def _setup_agent_run(dataset_id, db, current_user, goal_raw):
     """
     Shared setup for both the sync and streaming agent routes: auth/ownership
-    checks, dataset file + metadata lookup, profiling, and Metabase dashboard
-    creation. Raises HTTPException on any failure — caller does not need to
-    wrap this in try/except.
+    checks, dataset file + metadata lookup, profiling. Pipeline and agent
+    dashboards now coexist independently (each is its own dashboard_plans
+    row, scoped by mode) — no shared dashboard resource to check or clear
+    before starting a run. Raises HTTPException on any failure — caller
+    does not need to wrap this in try/except.
     """
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
@@ -67,38 +58,12 @@ async def _setup_agent_run(dataset_id, db, http_client, app_state, current_user,
     profile = profile_csv(matches[0], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
 
-    token = await get_session_token(http_client, app_state)
-    database_id = await get_database_id(token, http_client)
-
-    existing_dashboard_id = metadata.get("metabase_dashboard_id")
-    if existing_dashboard_id:
-        owning_plan = await get_cached_dashboard_plan(db, dataset_id)
-        owning_mode = owning_plan.get("mode", "pipeline") if owning_plan else "pipeline"
-        if owning_mode != "agent":
-            try:
-                card_ids = await get_dashboard_card_ids(token, http_client, existing_dashboard_id)
-                await delete_dashboard(token, http_client, existing_dashboard_id)
-                for card_id in card_ids:
-                    await delete_card(token, http_client, card_id)
-            except Exception:
-                pass
-
-    dashboard_title = f"{metadata['table_name']} — Agent"
-    dashboard_id = await create_dashboard(token, http_client, dashboard_title)
-    public_url = await create_public_link(token, http_client, dashboard_id)
-    await persist_metabase_dashboard_id(db, dataset_id, dashboard_id, public_url)
-
     goal = (goal_raw or "").strip() or DEFAULT_GOAL
 
     return {
         "semantics": semantics,
         "metadata": metadata,
         "profile": profile,
-        "token": token,
-        "database_id": database_id,
-        "dashboard_title": dashboard_title,
-        "dashboard_id": dashboard_id,
-        "public_url": public_url,
         "goal": goal,
     }
 
@@ -108,12 +73,10 @@ async def run_agent_dashboard(
     dataset_id: str,
     body: AgentRequest,
     db=Depends(get_db),
-    http_client=Depends(get_http_client),
-    app_state=Depends(get_app_state),
     current_user=Depends(require_editor),
 ):
     try:
-        setup = await _setup_agent_run(dataset_id, db, http_client, app_state, current_user, body.goal)
+        setup = await _setup_agent_run(dataset_id, db, current_user, body.goal)
 
         result = await run_agent(
             goal=setup["goal"],
@@ -121,15 +84,11 @@ async def run_agent_dashboard(
             field_map=setup["metadata"]["field_map"],
             semantics=setup["semantics"]["semantics_json"],
             profile=setup["profile"],
-            dashboard_id=setup["dashboard_id"],
-            token=setup["token"],
-            http_client=http_client,
-            database_id=setup["database_id"],
+            pool=db,
         )
 
         agent_plan = {
             "dataset_id": dataset_id,
-            "dashboard_title": setup["dashboard_title"],
             "mode": "agent",
             "goal": setup["goal"],
             "charts": result["charts_built"],
@@ -138,8 +97,6 @@ async def run_agent_dashboard(
         await persist_dashboard_plan(db, dataset_id, agent_plan)
 
         return {
-            "dashboard_id": setup["dashboard_id"],
-            "public_url": setup["public_url"],
             "charts_built": result["charts_built"],
             "trace": result["trace"],
         }
@@ -163,24 +120,21 @@ async def run_agent_dashboard_stream(
     dataset_id: str,
     body: AgentRequest,
     db=Depends(get_db),
-    http_client=Depends(get_http_client),
-    app_state=Depends(get_app_state),
     current_user=Depends(require_editor),
 ):
     # All setup that can fail with a clean HTTP status runs before the stream
     # opens, so the client gets a normal 404/403/etc rather than a swallowed
     # error mid-stream.
-    setup = await _setup_agent_run(dataset_id, db, http_client, app_state, current_user, body.goal)
+    setup = await _setup_agent_run(dataset_id, db, current_user, body.goal)
 
     async def event_generator():
         charts_built = []
         trace = []
 
-        # Insert the row now so a disconnect right after dashboard creation
-        # still leaves a recoverable row for GET /datasets/{id}/state.
+        # Insert the row now so a disconnect right after starting still
+        # leaves a recoverable row for GET /datasets/{id}/state.
         agent_plan = {
             "dataset_id": dataset_id,
-            "dashboard_title": setup["dashboard_title"],
             "mode": "agent",
             "goal": setup["goal"],
             "charts": charts_built,
@@ -195,15 +149,13 @@ async def run_agent_dashboard_stream(
                 field_map=setup["metadata"]["field_map"],
                 semantics=setup["semantics"]["semantics_json"],
                 profile=setup["profile"],
-                dashboard_id=setup["dashboard_id"],
-                token=setup["token"],
-                http_client=http_client,
-                database_id=setup["database_id"],
+                pool=db,
             ):
                 event_type = event["type"]
 
                 if event_type == "chart_built":
                     charts_built.append({
+                        "card_id": event["card_id"],
                         "chart_title": event["chart_title"],
                         "chart_type": event["chart_type"],
                         "sql": event["sql"],
@@ -211,16 +163,8 @@ async def run_agent_dashboard_stream(
                         "y_alias": event.get("y_alias"),
                         "series_alias": event.get("series_alias"),
                         "viz_params": event.get("viz_params"),
-                        "card_id": event["card_id"],
                         "healed": event["healed"],
                     })
-
-                if event_type == "finish":
-                    event = {
-                        **event,
-                        "dashboard_id": setup["dashboard_id"],
-                        "public_url": setup["public_url"],
-                    }
 
                 # Persist trace-worthy events (everything except UI-only ones)
                 # so the dataset state survives a disconnect mid-run.

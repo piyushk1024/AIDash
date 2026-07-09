@@ -5,7 +5,6 @@ import pandas as pd
 def infer_basic_type(values: list[str]) -> str:
     
     non_empty = [v for v in values if v not in (None, "", "null", "NULL", "NA", "N/A", "na", "n/a")]
-    # non_empty = [v for v in values if v not in (None, "", "null", "NULL")]
     if not non_empty:
         return "string"
 
@@ -29,6 +28,22 @@ def infer_basic_type(values: list[str]) -> str:
         pass
 
     return "string"
+
+
+def _native(v):
+    # Converts pandas/numpy scalar types (numpy.float64, numpy.int64, etc.)
+    # to native Python types, and NaN to None. Anything from describe(),
+    # value_counts(), or a correlation matrix comes back as a numpy scalar,
+    # which plain json.dumps can't serialize — this is the single point
+    # where that gets fixed, so every downstream consumer (JSONB storage,
+    # LLM prompts, agent profile summaries) only ever sees plain types.
+    if v is None:
+        return None
+    if isinstance(v, float) and pd.isna(v):
+        return None
+    if hasattr(v, "item"):
+        return v.item()
+    return v
 
 
 def profile_csv(file_path: Path, dataset_id: str) -> dict:
@@ -59,7 +74,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         corr = df[numeric_cols].corr().round(2)
         for col in numeric_cols:
             correlations[col] = {
-                other: (None if pd.isna(corr.loc[col, other]) else corr.loc[col, other])
+                other: _native(corr.loc[col, other])
                 for other in numeric_cols
                 if other != col
                 }
@@ -71,11 +86,10 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         if df[cat_col].nunique() <= 20 and numeric_cols:
             group = df.groupby(cat_col)[numeric_cols].mean().round(2)            
             group_dict = group.to_dict()
-            # Replace NaN with None after conversion
             cleaned = {}
             for num_col, district_vals in group_dict.items():
                 cleaned[num_col] = {
-                    k: (None if pd.isna(v) else v)
+                    k: _native(v)
                     for k, v in district_vals.items()
                 }
             grouped_stats[cat_col] = cleaned
@@ -98,7 +112,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         if col in numeric_cols:
             desc = df[col].describe().round(2).to_dict()
             col_profile["stats"] = {
-                k: (None if pd.isna(v) else v)
+                k: _native(v)
                 for k, v in {
                     "mean": desc.get("mean"),
                     "std": desc.get("std"),
@@ -113,9 +127,10 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
                 col_profile["correlations"] = correlations[col]
 
         elif col in categorical_cols:
-            col_profile["value_counts"] = (
-                df[col].value_counts().head(10).to_dict()
-            )
+            col_profile["value_counts"] = {
+                _native(k): _native(v)
+                for k, v in df[col].value_counts().head(10).items()
+            }
 
         profile_columns.append(col_profile)
 

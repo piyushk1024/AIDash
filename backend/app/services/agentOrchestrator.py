@@ -3,10 +3,11 @@ import logging
 from typing import AsyncGenerator
 from app.services.llm import generate_with_tools
 from app.services.sqlGuard import validate_sql
-from app.services.cardBuilder import create_card_with_healing
-from app.services.metabaseClient import execute_sql_query, add_card_to_dashboard
+from app.services.cardBuilder import build_card_with_healing
+from app.services.queryExecutor import execute_raw_query
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
 from app.schemas.chartTypes import CHART_TYPE_GUIDANCE
+from app.services.database import json_default
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -107,10 +108,7 @@ async def _dispatch_inspect_data(tool_args: dict, execute_sql_fn, step: int) -> 
 
 async def _dispatch_build_and_add_chart(
     tool_args: dict,
-    token: str,
-    http_client,
-    database_id: int,
-    dashboard_id: int,
+    pool,
     field_map: dict,
     charts_built: list,
     step: int,
@@ -140,7 +138,7 @@ async def _dispatch_build_and_add_chart(
         }
         return observation, trace_entry, False
 
-    result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
+    result, error = await build_card_with_healing(chart_spec, field_map, pool)
 
     healed = bool(result and result.get("healed"))
 
@@ -148,9 +146,10 @@ async def _dispatch_build_and_add_chart(
         logger.error("Agent chart creation failed for '%s': %s", chart_spec["chart_title"], error)
         observation = {"error": "Chart creation failed after healing attempt."}
     else:
-        position = len(charts_built)
-        await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
-        charts_built.append({**chart_spec, "card_id": result["card_id"]})
+        # No separate dashboard object to append to anymore — the built
+        # result (including its stable card_id) is simply appended to the
+        # in-memory list; list order is the display order.
+        charts_built.append(result)
         observation = {
             "success": True,
             "card_id": result["card_id"],
@@ -176,10 +175,7 @@ async def stream_agent(
     field_map: dict,
     semantics: dict,
     profile: dict,
-    dashboard_id: int,
-    token: str,
-    http_client,
-    database_id: int,
+    pool,
 ) -> AsyncGenerator[dict, None]:
     field_reference = _build_field_reference(field_map, semantics)
     profile_summary = _build_profile_summary(profile)
@@ -197,7 +193,7 @@ async def stream_agent(
     inspect_count = 0
 
     async def execute_sql_fn(sql: str) -> dict:
-        return await execute_sql_query(token, http_client, sql, database_id)
+        return await execute_raw_query(pool, sql)
 
     for iteration in range(settings.AGENT_MAX_ITERATIONS):
         available_tools = _get_available_tools(inspect_count)
@@ -227,7 +223,7 @@ async def stream_agent(
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": json.dumps(observation),
+                "content": json.dumps(observation, default=json_default),
             })
             yield {
                 "type": "finish",
@@ -251,10 +247,7 @@ async def stream_agent(
         elif tool_name == "build_and_add_chart":
             observation, trace_entry, healed = await _dispatch_build_and_add_chart(
                 tool_args=tool_args,
-                token=token,
-                http_client=http_client,
-                database_id=database_id,
-                dashboard_id=dashboard_id,
+                pool=pool,
                 field_map=field_map,
                 charts_built=charts_built,
                 step=iteration + 1,
@@ -293,7 +286,7 @@ async def stream_agent(
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": json.dumps(observation),
+            "content": json.dumps(observation, default=json_default),
         })
 
 
@@ -303,10 +296,7 @@ async def run_agent(
     field_map: dict,
     semantics: dict,
     profile: dict,
-    dashboard_id: int,
-    token: str,
-    http_client,
-    database_id: int,
+    pool,
 ) -> dict:
     """
     Wrapper around stream_agent for the existing synchronous route.
@@ -321,10 +311,7 @@ async def run_agent(
         field_map=field_map,
         semantics=semantics,
         profile=profile,
-        dashboard_id=dashboard_id,
-        token=token,
-        http_client=http_client,
-        database_id=database_id,
+        pool=pool,
     ):
         event_type = event["type"]
 
@@ -340,5 +327,4 @@ async def run_agent(
     return {
         "charts_built": charts_built,
         "trace": trace,
-        "dashboard_id": dashboard_id,
     }

@@ -4,12 +4,15 @@ from app.services.database import (
     get_cached_semantics,
     get_cached_dashboard_plan,
     persist_dashboard_plan,
+    update_dashboard_plan,
     get_dataset_metadata,
     get_dataset_owner,
     persist_profile_json
 )
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
+from app.services.cardBuilder import build_card_with_healing
+from app.services.llm import is_llm_in_cooldown
 from app.config import settings
 from app.schemas.chartTypes import CHART_TYPE_VALUES
 from app.services.llm import LLMUnavailableError
@@ -75,7 +78,6 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     field_map = metadata["field_map"] if metadata else {}
     table_name = metadata["table_name"] if metadata else ""
 
-    #plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
     try:
         plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
     except LLMUnavailableError as e:
@@ -93,3 +95,63 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     await persist_dashboard_plan(db, dataset_id, plan)
     
     return plan
+
+
+@router.post("/datasets/{dataset_id}/dashboard/build")
+async def build_dashboard(
+    dataset_id: str,
+    db=Depends(get_db),
+    current_user=Depends(require_editor),
+):
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    plan = await get_cached_dashboard_plan(db, dataset_id, mode="pipeline")
+    if not plan:
+        raise HTTPException(
+            status_code=404,
+            detail="No pipeline dashboard plan found. Run /generate-dashboard-plan first.",
+        )
+
+    metadata = await get_dataset_metadata(db, dataset_id)
+    if not metadata:
+        raise HTTPException(
+            status_code=404,
+            detail="No dataset metadata found. Re-upload the CSV to generate field mappings.",
+        )
+    field_map = metadata["field_map"]
+
+    built_charts, errors = [], []
+    provider_unavailable = False
+
+    for chart in plan["charts"]:
+        if provider_unavailable:
+            errors.append({
+                "chart_title": chart.get("chart_title"),
+                "chart_type": chart.get("chart_type"),
+                "failed": True,
+                "skipped": True,
+                "reason": "AI provider rate-limited — skipped, remaining charts not attempted. Retry shortly.",
+            })
+            continue
+
+        result, error = await build_card_with_healing(
+            chart, field_map, db, existing_id=chart.get("card_id"),
+        )
+        if error:
+            errors.append(error)
+            if is_llm_in_cooldown():
+                provider_unavailable = True
+            continue
+        built_charts.append(result)
+
+    updated_plan = {**plan, "mode": "pipeline", "charts": built_charts, "errors": errors}
+    await update_dashboard_plan(db, dataset_id, updated_plan)
+
+    return {
+        "cards_created": len(built_charts),
+        "cards": built_charts,
+        "errors": errors,
+        "provider_unavailable": provider_unavailable,
+    }

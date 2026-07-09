@@ -1,14 +1,12 @@
-# app/main.py
 from contextlib import asynccontextmanager
-import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.services.database import create_pool
 from app.routes import (
     uploadsRoute, profilerRoute, semanticsRoute,
-    dashboardRoute, metabaseRoute, cleanupRoute,
+    dashboardRoute, cleanupRoute,
     datasetsRoute, insightsRoute, nlDashboardRoute,
-    authRoute,agentRoute
+    authRoute, agentRoute
 )
 from app.services.migrationRunner import run_migrations
 from app.services.telemetry import setup_telemetry, shutdown_telemetry
@@ -23,13 +21,9 @@ async def lifespan(app: FastAPI):
     setup_telemetry()
     app.state.db_pool = await create_pool()
     await run_migrations(app.state.db_pool)
-    app.state.http_client = httpx.AsyncClient()
-    app.state.metabase_token = None
-    app.state.metabase_token_expires = 0.0
     yield
     # Shutdown
     await app.state.db_pool.close()
-    await app.state.http_client.aclose()
     shutdown_telemetry()
 
 
@@ -47,7 +41,6 @@ app.include_router(uploadsRoute.router)
 app.include_router(profilerRoute.router)
 app.include_router(semanticsRoute.router)
 app.include_router(dashboardRoute.router)
-app.include_router(metabaseRoute.router)
 app.include_router(insightsRoute.router)
 app.include_router(cleanupRoute.router)
 app.include_router(nlDashboardRoute.router)

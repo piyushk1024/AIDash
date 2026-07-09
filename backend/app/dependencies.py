@@ -3,7 +3,6 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError
 from app.services.auth import decode_access_token
 import asyncpg
-import httpx
 
 bearer_scheme = HTTPBearer()
 
@@ -33,9 +32,3 @@ async def require_editor(current_user: AuthUser = Depends(get_current_user)) -> 
 
 async def get_db(request: Request) -> asyncpg.Pool:
     return request.app.state.db_pool
-
-async def get_http_client(request: Request) -> httpx.AsyncClient:
-    return request.app.state.http_client
-
-async def get_app_state(request: Request):
-    return request.app.state

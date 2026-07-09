@@ -2,6 +2,7 @@ import json
 from app.services.llm import generate
 # from app.config import settings
 from app.services.sqlGuard import validate_sql
+from app.services.database import json_default
 
 
 TURN1_PROMPT = """
@@ -91,9 +92,7 @@ async def _call_llm(prompt: str, stage: str = "insight") -> dict:
     return json.loads(raw)
 
 async def generate_insights(
-    table_name: str,
-    table_id: int,
-    database_id: int,
+    table_name: str,    
     field_map: dict,
     profile: dict,
     semantics: dict,
@@ -117,7 +116,7 @@ async def generate_insights(
 
         turn2 = TURN2_PROMPT.format(
             prompt=prompt,
-            query_results=json.dumps(query_results, indent=2),
+            query_results=json.dumps(query_results, indent=2, default=json_default),
         )
         result = await _call_llm(turn2)
 
