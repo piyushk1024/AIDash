@@ -79,6 +79,8 @@ async def add_nl_chart(
         )
     except LLMUnavailableError as e:
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"Couldn't build a valid chart from that request: {e}")
 
     result, error = await build_card_with_healing(chart_spec, field_map, db)
     if error:

@@ -53,9 +53,9 @@ async def build_card_with_healing(
 def _clean_entry(chart: dict, card_id: str, query_result: dict) -> dict:
     return {
         "card_id":     card_id,
-        "chart_title": chart["chart_title"],
-        "chart_type":  chart["chart_type"],
-        "sql":         chart["sql"],
+        "chart_title": chart.get("chart_title", "Untitled chart"),
+        "chart_type":  chart.get("chart_type"),
+        "sql":         chart.get("sql"),
         "rows":        query_result["rows"],
         "spec":        query_result["spec"],
         "healed":      False,

@@ -114,6 +114,19 @@ async def _dispatch_build_and_add_chart(
     step: int,
 ) -> tuple[dict, dict, bool]:
     # Third return value is healed — True if the chart spec was healed before succeeding.
+    required = ("chart_title", "chart_type", "sql")
+    missing = [f for f in required if not tool_args.get(f)]
+    if missing:
+        observation = {"error": f"Missing required field(s): {missing}"}
+        trace_entry = {
+            "step": step,
+            "tool": "build_and_add_chart",
+            "reasoning": tool_args.get("reasoning", ""),
+            "chart_title": tool_args.get("chart_title", "unknown"),
+            "observation": observation,
+        }
+        return observation, trace_entry, False
+
     chart_spec = {
         "chart_title": tool_args["chart_title"],
         "chart_type": tool_args["chart_type"],

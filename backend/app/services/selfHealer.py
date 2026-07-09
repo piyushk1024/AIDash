@@ -76,6 +76,7 @@ async def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
         raw = raw.split("```")[1].split("```")[0].strip()
 
     healed = json.loads(raw)
+    healed = {**chart, **healed}
 
     validate_sql(healed["sql"], context=healed.get("chart_title", ""))
     if healed.get("chart_type") not in CHART_TYPE_VALUES:

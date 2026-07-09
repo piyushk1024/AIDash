@@ -113,6 +113,10 @@ async def build_chart_from_prompt(
         raw = raw.split("```")[1].split("```")[0].strip()
 
     chart = json.loads(raw)
+    missing = [f for f in required if not chart.get(f)]
+
+    if missing:
+        raise ValueError(f"NL chart builder response missing required field(s): {missing}")
 
     if chart.get("chart_type") not in CHART_TYPE_VALUES:
         raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")

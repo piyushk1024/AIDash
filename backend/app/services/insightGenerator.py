@@ -1,6 +1,5 @@
 import json
 from app.services.llm import generate
-# from app.config import settings
 from app.services.sqlGuard import validate_sql
 from app.services.database import json_default
 
@@ -38,6 +37,42 @@ HARD CONSTRAINTS:
 - Only use columns from the available columns list
 - Double-quote all column and table names
 - PostgreSQL syntax only
+- Boolean columns cannot be passed directly to SUM/AVG — cast first, e.g.
+  SUM(CASE WHEN "flag_col" THEN 1 ELSE 0 END), never SUM("flag_col")
+- SELECT only — no DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
+- No semicolons
+
+Return:
+{{
+  "mode": "query",
+  "sql": "SELECT ..."
+}}
+
+No markdown. Raw JSON only.
+"""
+
+TURN1_RETRY_PROMPT = """
+You are a data analyst. Your previous PostgreSQL query failed.
+
+Table: "{table_name}"
+
+Available columns (name | base_type | semantic_role):
+{field_reference}
+
+User question: {prompt}
+
+Previous SQL:
+{sql}
+
+Error:
+{error}
+
+Fix the query. Same hard constraints apply:
+- Only use columns from the available columns list
+- Double-quote all column and table names
+- PostgreSQL syntax only
+- Boolean columns cannot be passed directly to SUM/AVG — cast first, e.g.
+  SUM(CASE WHEN "flag_col" THEN 1 ELSE 0 END), never SUM("flag_col")
 - SELECT only — no DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
 - No semicolons
 
@@ -83,16 +118,16 @@ def _build_field_reference(field_map: dict, semantics: dict) -> str:
 
 
 async def _call_llm(prompt: str, stage: str = "insight") -> dict:
-    # If granular identification is required, change the calling sight with stage parameter
-    raw = await generate(prompt)
+    raw = await generate(prompt, stage=stage)
     if "```json" in raw:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
     return json.loads(raw)
 
+
 async def generate_insights(
-    table_name: str,    
+    table_name: str,
     field_map: dict,
     profile: dict,
     semantics: dict,
@@ -100,9 +135,11 @@ async def generate_insights(
     execute_sql_fn,
 ) -> dict:
 
+    field_reference = _build_field_reference(field_map, semantics)
+
     turn1 = TURN1_PROMPT.format(
         table_name=table_name,
-        field_reference=_build_field_reference(field_map, semantics),
+        field_reference=field_reference,
         profile=json.dumps(profile, indent=2),
         prompt=prompt,
     )
@@ -111,13 +148,41 @@ async def generate_insights(
 
     if result.get("mode") == "query":
         sql = result["sql"]
-        validate_sql(sql, context="insight query")
-        query_results = await execute_sql_fn(sql)
+
+        try:
+            validate_sql(sql, context="insight query")
+            query_results = await execute_sql_fn(sql)
+        except Exception as e:
+            # One retry: feed the error back and let the LLM fix the SQL,
+            # same single-attempt-heal pattern as chart building. If this
+            # also fails, surface a clean insight-shaped message instead
+            # of letting the exception propagate as a 500.
+            try:
+                retry_prompt = TURN1_RETRY_PROMPT.format(
+                    table_name=table_name,
+                    field_reference=field_reference,
+                    prompt=prompt,
+                    sql=sql,
+                    error=str(e),
+                )
+                retry_result = await _call_llm(retry_prompt)
+                sql = retry_result["sql"]
+                validate_sql(sql, context="insight query retry")
+                query_results = await execute_sql_fn(sql)
+            except Exception:
+                return {
+                    "mode": "stats",
+                    "insights": [{
+                        "title": "Couldn't answer this question",
+                        "finding": "The query needed to answer this failed and couldn't be automatically fixed. Try rephrasing the question.",
+                        "confidence": "low",
+                    }],
+                }
 
         turn2 = TURN2_PROMPT.format(
             prompt=prompt,
             query_results=json.dumps(query_results, indent=2, default=json_default),
         )
-        result = await _call_llm(turn2)
+        result = await _call_llm(turn2, stage="insight_synthesis")
 
     return result

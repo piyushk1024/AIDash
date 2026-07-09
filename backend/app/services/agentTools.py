@@ -19,7 +19,9 @@ TOOL_SCHEMAS = [
                         "description": (
                             "A PostgreSQL SELECT query. Must be aggregate-focused "
                             "(use GROUP BY, COUNT, AVG, SUM, RANK, etc.). "
-                            "No semicolons. Double-quote all table and column names."
+                            "No semicolons. Double-quote all table and column names. "
+                            "Boolean columns cannot be passed directly to SUM/AVG — "
+                            "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."
                         ),
                     },
                     "reasoning": {
@@ -61,7 +63,9 @@ TOOL_SCHEMAS = [
                         "description": (
                             "PostgreSQL SELECT query. No semicolons. "
                             "Double-quote all table and column names. "
-                            "Alias all output columns clearly."
+                            "Alias all output columns clearly. "
+                            "Boolean columns cannot be passed directly to SUM/AVG — "
+                            "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."
                         ),
                     },
                     "x_alias": {
@@ -84,12 +88,11 @@ TOOL_SCHEMAS = [
                     "viz_params": {
                         "type": "object",
                         "description": (
-                            "Required for gauge, funnel, waterfall, pivot, and map chart "
-                            "types. A dict of Metabase visualization_settings matching "
-                            "what that chart type needs (e.g. segments for gauge, "
-                            "column_split for pivot). You decide the values yourself, "
-                            "typically by computing them via inspect_data first. "
-                            "Omit for all other chart types."
+                            "Required for gauge, funnel, waterfall, and map chart "
+                            "types. A dict of Plotly trace fields matching what that "
+                            "chart type needs (e.g. gauge steps/bands for gauge). "
+                            "You decide the values yourself, typically by computing "
+                            "them via inspect_data first. Omit for all other chart types."
                         ),
                     },
                     "reasoning": {
@@ -123,7 +126,7 @@ TOOL_SCHEMAS = [
     },
 ]
 
-SYSTEM_PROMPT = """You are an expert BI analyst. Build a Metabase dashboard that satisfies the goal below.
+SYSTEM_PROMPT = """You are an expert BI analyst. Build a dashboard that satisfies the goal below.
 
 Table: "{table_name}"
 
@@ -146,6 +149,8 @@ Rules:
   (see series_alias below) over several charts that each address only one factor.
 - Call finish when the goal is satisfied.
 - All SQL: double-quote all table and column names, PostgreSQL syntax, no semicolons.
+- Boolean columns cannot be passed directly to SUM/AVG — cast first, e.g.
+  SUM(CASE WHEN "flag_col" THEN 1 ELSE 0 END), never SUM("flag_col").
 - Inspection queries must be aggregate-focused — never SELECT *.
 
 Chart type guidance:

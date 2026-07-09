@@ -9,6 +9,7 @@ from app.services.database import (
     persist_dashboard_plan,
     update_dashboard_plan,
     persist_profile_json,
+    json_default
 )
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
@@ -112,7 +113,7 @@ async def run_agent_dashboard(
 
 
 def _sse_format(event: dict) -> str:
-    return f"data: {json.dumps(event)}\n\n"
+    return f"data: {json.dumps(event, default=json_default)}\n\n"
 
 
 @router.post("/datasets/{dataset_id}/dashboard/agent/stream")
