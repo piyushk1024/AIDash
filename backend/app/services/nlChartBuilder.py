@@ -113,6 +113,7 @@ async def build_chart_from_prompt(
         raw = raw.split("```")[1].split("```")[0].strip()
 
     chart = json.loads(raw)
+    required = ("chart_title", "chart_type", "sql")
     missing = [f for f in required if not chart.get(f)]
 
     if missing:
