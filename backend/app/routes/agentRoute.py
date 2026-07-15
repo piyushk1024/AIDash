@@ -1,4 +1,5 @@
 import json
+import io
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -13,8 +14,9 @@ from app.services.database import (
 )
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
+from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
-from app.dependencies import get_db, require_editor
+from app.dependencies import get_db, get_current_user, require_editor
 from app.config import settings
 import logging
 
@@ -63,6 +65,8 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
 
     existing_charts = None
     existing_trace = []
+    existing_rationale = ""
+    existing_dashboard_title = ""
     if nudge:
         existing_plan = await get_cached_dashboard_plan(db, dataset_id, mode="agent")
         if not existing_plan or not existing_plan.get("charts"):
@@ -72,6 +76,8 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
             )
         existing_charts = existing_plan["charts"]
         existing_trace = existing_plan.get("trace", [])
+        existing_rationale = existing_plan.get("rationale", "")
+        existing_dashboard_title = existing_plan.get("dashboard_title", "")
 
     return {
         "semantics": semantics,
@@ -80,6 +86,8 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
         "goal": goal,
         "existing_charts": existing_charts,
         "existing_trace": existing_trace,
+        "existing_rationale": existing_rationale,
+        "existing_dashboard_title": existing_dashboard_title,
     }
 
 
@@ -111,6 +119,8 @@ async def run_agent_dashboard(
             "goal": setup["goal"],
             "charts": result["charts_built"],
             "trace": combined_trace,
+            "rationale": result["rationale"],
+            "dashboard_title": result["dashboard_title"],
         }
 
         if body.nudge:
@@ -121,6 +131,8 @@ async def run_agent_dashboard(
         return {
             "charts_built": result["charts_built"],
             "trace": combined_trace,
+            "rationale": result["rationale"],
+            "dashboard_title": result["dashboard_title"],
         }
 
     except HTTPException:
@@ -132,6 +144,48 @@ async def run_agent_dashboard(
         logger.exception("Agent run failed for dataset %s", dataset_id)
         raise HTTPException(status_code=500, detail="Agent run failed. Please try again.")
 
+
+class ChartImage(BaseModel):
+    chart_title: str
+    image_base64: str  # PNG, base64-encoded, no "data:image/png;base64," prefix
+
+
+class ReportRequest(BaseModel):
+    charts: list[ChartImage]
+
+@router.post("/datasets/{dataset_id}/report")
+async def get_agent_dashboard_report(
+    dataset_id: str,
+    body: ReportRequest,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    agent_plan = await get_cached_dashboard_plan(db, dataset_id, mode="agent")
+    if not agent_plan or not agent_plan.get("charts"):
+        raise HTTPException(status_code=404, detail="No agent-built dashboard found for this dataset.")
+
+    if not body.charts:
+        raise HTTPException(status_code=400, detail="No chart images provided.")
+
+    metadata = await get_dataset_metadata(db, dataset_id)
+    fallback_title = (metadata or {}).get("original_filename", "Dashboard Report")
+    dashboard_title = agent_plan.get("dashboard_title") or fallback_title
+
+    pdf_bytes = generate_agent_report_pdf(
+        dashboard_title=dashboard_title,
+        rationale=agent_plan.get("rationale", ""),
+        charts=[c.model_dump() for c in body.charts],
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{dataset_id}_report.pdf"'},
+    )
 
 def _sse_format(event: dict) -> str:
     from app.services.database import json_default
@@ -156,6 +210,8 @@ async def run_agent_dashboard_stream(
         # empty dashboard.
         charts_built = list(setup["existing_charts"]) if setup["existing_charts"] else []
         trace = list(setup["existing_trace"])
+        rationale = setup.get("existing_rationale", "")
+        dashboard_title = setup.get("existing_dashboard_title", "")
 
         agent_plan = {
             "dataset_id": dataset_id,
@@ -163,6 +219,8 @@ async def run_agent_dashboard_stream(
             "goal": setup["goal"],
             "charts": charts_built,
             "trace": trace,
+            "rationale": rationale,
+            "dashboard_title": dashboard_title,
         }
 
         if body.nudge:
@@ -215,6 +273,13 @@ async def run_agent_dashboard_stream(
                         charts_built.append(edited)
                 elif event_type == "chart_deleted":
                     charts_built[:] = [c for c in charts_built if c.get("card_id") != event.get("card_id")]
+                elif event_type == "rationale":
+                    rationale = event.get("text", "")
+                    dashboard_title = event.get("dashboard_title", "")
+                    agent_plan = {**agent_plan, "rationale": rationale, "dashboard_title": dashboard_title}
+                    await update_dashboard_plan(db, dataset_id, agent_plan)
+                    yield _sse_format(event)
+                    continue
 
                 # Persist trace-worthy events (everything except UI-only ones)
                 # so the dataset state survives a disconnect mid-run.

@@ -71,6 +71,8 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
             "published":    metadata.get("published", False) and metadata.get("published_mode") == "agent",
             "charts_built": agent_plan.get("charts", []),
             "trace":        agent_plan.get("trace", []),
+            "rationale":    agent_plan.get("rationale", ""),
+            "dashboard_title": agent_plan.get("dashboard_title", "")
         }
 
     return {

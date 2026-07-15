@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import AsyncGenerator
-from app.services.llm import generate_with_tools
+from app.services.llm import generate, generate_with_tools
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
 from app.services.agentDispatch import (
     dispatch_inspect_data,
@@ -87,6 +87,65 @@ def _get_available_tools(inspect_count: int, has_existing_charts: bool) -> list[
     return tools
 
 
+SYNTHESIS_PROMPT_TEMPLATE = """You just finished building a dashboard for a business user. Produce two things:
+1. A short, professional dashboard title (5-8 words) fit for a report cover page.
+2. An explanation, in plain language, of why the charts you built serve the
+   stated goal. Write for the person who will read this dashboard, not for
+   a developer.
+
+DASHBOARD GOAL (may be empty if no goal was set):
+{goal}
+
+CHARTS BUILT:
+{charts_summary}
+
+For the rationale: write one short paragraph (3-5 sentences). Reference
+specific chart titles where it helps. Do not describe the build process,
+tools used, or SQL. Focus only on why this set of charts answers the goal.
+If no goal was set, explain what business questions this set of charts
+collectively answers.
+
+Respond with ONLY a JSON object in this exact shape, no markdown fences,
+no preamble, no text outside the JSON:
+{{"dashboard_title": "...", "rationale": "..."}}
+"""
+
+
+def _summarize_charts_for_rationale(charts_built: list[dict]) -> str:
+    lines = []
+    for c in charts_built:
+        title = c.get("chart_title", "?")
+        chart_type = c.get("chart_type", "?")
+        lines.append(f'  - "{title}" ({chart_type})')
+    return "\n".join(lines) if lines else "  (no charts were built)"
+
+
+async def generate_dashboard_synthesis(goal: str, charts_built: list[dict], trace: list[dict]) -> dict:
+    """
+    Guaranteed post-loop synthesis step, not agent-callable. Runs once after
+    every agent-mode build/nudge completes. Returns {"dashboard_title": str,
+    "rationale": str}. `trace` is accepted for future use (e.g. referencing
+    a healed chart or a dropped approach) but is not yet used in the prompt.
+
+    Falls back to a generic title (never blank) if the model doesn't return
+    parseable JSON — a bad title shouldn't fail the whole agent run.
+    """
+    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
+        goal=goal or "(none set)",
+        charts_summary=_summarize_charts_for_rationale(charts_built),
+    )
+    raw = (await generate(prompt, stage="rationale")).strip()
+
+    try:
+        parsed = json.loads(raw)
+        dashboard_title = (parsed.get("dashboard_title") or "").strip() or "Agent-Built Dashboard"
+        rationale = (parsed.get("rationale") or "").strip()
+        return {"dashboard_title": dashboard_title, "rationale": rationale}
+    except (json.JSONDecodeError, AttributeError):
+        logger.warning("Synthesis step returned non-JSON output — falling back to raw text as rationale")
+        return {"dashboard_title": "Agent-Built Dashboard", "rationale": raw}
+
+
 async def stream_agent(
     goal: str,
     table_name: str,
@@ -147,6 +206,16 @@ async def stream_agent(
                 "tool_call_id": tool_call.id,
                 "content": json.dumps(observation, default=json_default),
             })
+
+            synthesis = await generate_dashboard_synthesis(goal, charts_built, [])
+
+            yield {
+                "type": "rationale",
+                "step": iteration + 1,
+                "tool": "finish",
+                "dashboard_title": synthesis["dashboard_title"],
+                "text": synthesis["rationale"],
+            }
             yield {
                 "type": "finish",
                 "step": iteration + 1,
@@ -217,6 +286,8 @@ async def run_agent(
     """
     charts_built = []
     trace = []
+    rationale = ""
+    dashboard_title = ""
 
     async for event in stream_agent(
         goal=goal,
@@ -232,6 +303,11 @@ async def run_agent(
         if event_type == "finish":
             charts_built = event.get("charts_built", [])
 
+        if event_type == "rationale":
+            rationale = event.get("text", "")
+            dashboard_title = event.get("dashboard_title", "")
+            continue
+
         if event_type not in ("step_started", "healing"):
             trace_entry = {k: v for k, v in event.items() if k not in ("type", "charts_built")}
             trace.append(trace_entry)
@@ -239,4 +315,6 @@ async def run_agent(
     return {
         "charts_built": charts_built,
         "trace": trace,
+        "rationale": rationale,
+        "dashboard_title": dashboard_title,
     }

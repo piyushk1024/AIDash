@@ -27,7 +27,7 @@ async def lifespan(app: FastAPI):
     shutdown_telemetry()
 
 
-app = FastAPI(title="AI Dashboard MVP", lifespan=lifespan)
+app = FastAPI(title="AI Dashboard MVP", lifespan=lifespan,swagger_ui_parameters={"syntaxHighlight": False},)
 
 app.add_middleware(
     CORSMiddleware,
