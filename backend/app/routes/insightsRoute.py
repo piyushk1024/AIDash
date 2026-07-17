@@ -13,6 +13,7 @@ from app.services.insightGenerator import generate_insights
 from app.services.queryExecutor import execute_raw_query
 from app.dependencies import get_db, get_current_user
 from app.config import settings
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -39,7 +40,7 @@ async def post_insight(
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found.")
-    profile = profile_csv(matches[0], dataset_id)
+    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
 
     metadata = await get_dataset_metadata(db, dataset_id)
     if not metadata:

@@ -6,6 +6,8 @@ from app.schemas.chartTypes import (
     MEASURE_PAIR_TYPES,
     SERIES_CAPABLE_TYPES,
     PASSTHROUGH_TYPES,
+    HISTOGRAM_TYPES,
+    DISTRIBUTION_TYPES,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +114,22 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             y = [_row_value(r, y_alias, title) for r in rows]
             data = [_single_trace(chart_type, x, y)]
         return {"data": data, "layout": layout}
+    if chart_type in HISTOGRAM_TYPES:
+        x_alias = chart.get("x_alias")
+        if not x_alias:
+            raise ValueError(f"x_alias required for chart type '{chart_type.value}' ({title})")
+        trace = {"type": "histogram", "x": [_row_value(r, x_alias, title) for r in rows]}
+        return {"data": [trace], "layout": layout}
+
+    if chart_type in DISTRIBUTION_TYPES:
+        y_alias = chart.get("y_alias")
+        if not y_alias:
+            raise ValueError(f"y_alias required for chart type '{chart_type.value}' ({title})")
+        trace = {"type": "box", "y": [_row_value(r, y_alias, title) for r in rows]}
+        x_alias = chart.get("x_alias")
+        if x_alias:
+            trace["x"] = [_row_value(r, x_alias, title) for r in rows]
+        return {"data": [trace], "layout": layout}
 
     raise ValueError(f"Unsupported chart type '{chart_type.value}' ({title})")
 

@@ -3,6 +3,7 @@ from app.config import settings
 from app.services.profiler import profile_csv
 from app.dependencies import get_db, require_editor
 from app.services.database import get_dataset_owner, get_cached_profile, persist_profile_json
+from starlette.concurrency import run_in_threadpool
 
 
 router = APIRouter()
@@ -29,6 +30,6 @@ async def profile_csv_route(
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found")
 
-    profile = profile_csv(matches[0], dataset_id)
+    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
     return profile

@@ -18,6 +18,7 @@ from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
 from app.dependencies import get_db, get_current_user, require_editor
 from app.config import settings
+from starlette.concurrency import run_in_threadpool
 import logging
 
 router = APIRouter()
@@ -58,7 +59,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found.")
 
-    profile = profile_csv(matches[0], dataset_id)
+    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
 
     goal = (goal_raw or "").strip() or DEFAULT_GOAL
@@ -175,7 +176,8 @@ async def get_agent_dashboard_report(
     fallback_title = (metadata or {}).get("original_filename", "Dashboard Report")
     dashboard_title = agent_plan.get("dashboard_title") or fallback_title
 
-    pdf_bytes = generate_agent_report_pdf(
+    pdf_bytes = await run_in_threadpool(
+        generate_agent_report_pdf,
         dashboard_title=dashboard_title,
         rationale=agent_plan.get("rationale", ""),
         charts=[c.model_dump() for c in body.charts],

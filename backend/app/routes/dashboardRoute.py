@@ -16,6 +16,7 @@ from app.services.llm import is_llm_in_cooldown
 from app.config import settings
 from app.schemas.chartTypes import CHART_TYPE_VALUES
 from app.services.llm import LLMUnavailableError
+from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
 
@@ -71,7 +72,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
     if not matches:
         raise HTTPException(status_code=404, detail="Dataset file not found")
-    profile = profile_csv(matches[0], dataset_id)
+    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)    
     await persist_profile_json(db, dataset_id, profile)
 
     metadata = await get_dataset_metadata(db, dataset_id)

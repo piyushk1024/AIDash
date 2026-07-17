@@ -1,7 +1,11 @@
 import { useState } from 'react'
-import Plot from 'react-plotly.js'
 import { api } from '../../lib/api'
 import { useAutocomplete, AutocompleteInput } from './NLInput'
+// was: import Plot from 'react-plotly.js'
+import createPlotlyComponent from 'react-plotly.js/factory'
+import Plotly from '../../lib/plotly-custom'
+
+const Plot = createPlotlyComponent(Plotly)
 
 // --- RenderedChartCard ---
 // Card shape: {card_id, chart_title, chart_type, rows, spec, healed, failed}.
