@@ -56,6 +56,8 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
                     "card_id":        c.get("card_id"),
                     "chart_title":    c["chart_title"],
                     "chart_type":     c.get("chart_type"),
+                    "rows":           c.get("rows"),
+                    "spec":           c.get("spec"),
                     "healed":         c.get("healed", False),
                     "original_chart": c.get("original_chart"),
                     "healed_chart":   c.get("healed_chart"),

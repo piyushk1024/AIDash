@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 
-// Each step has a status. This drives what the UI shows.
-// idle    → not started yet
-// loading → request in flight
-// done    → completed successfully
-// error   → something went wrong
-
 const initialStatus = {
   upload: "idle",
   semantics: "idle",
@@ -15,42 +9,32 @@ const initialStatus = {
 };
 
 export function useDasher() {
-  // Core pipeline data — gets filled in step by step
   const [datasetId, setDatasetId] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [semantics, setSemantics] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [pipelinePlan, setPipelinePlan] = useState(null);
+  const [agentPlan, setAgentPlan] = useState(null);
   const [dashboardResult, setDashboardResult] = useState(null);
-  
-  const [conflict, setConflict] = useState(null); // { existing_dataset_id }
+  const [agentResult, setAgentResult] = useState(null);
 
-  // Per-step status and error messages
+  const [conflict, setConflict] = useState(null);
   const [status, setStatus] = useState(initialStatus);
   const [errors, setErrors] = useState({});
-  // Agentic persistance
-  const [agentResult, setAgentResult] = useState(null)
 
-  // Helper — update one step's status without touching the others.
-  // The ...prev spread means "keep everything else the same"
   const setStepStatus = (step, value) =>
     setStatus((prev) => ({ ...prev, [step]: value }));
-
   const setStepError = (step, message) =>
     setErrors((prev) => ({ ...prev, [step]: message }));
 
   // ── Step 1: Upload ──────────────────────────────────────────
-
   async function upload(file, replace = false, forceNew = false) {
     setStepStatus("upload", "loading");
     setStepError("upload", null);
     try {
       const result = await api.uploadCsv(file, replace, forceNew);
       if (result.conflict) {
-        setConflict({
-          file,
-          // businessHint,
-          existing_dataset_id: result.existing_dataset_id,
-        });
+        setConflict({ file, existing_dataset_id: result.existing_dataset_id });
         setStepStatus("upload", "idle");
         return;
       }
@@ -89,7 +73,7 @@ export function useDasher() {
     }
   }
 
-  // ── Step 3: Dashboard Plan ──────────────────────────────────
+  // ── Step 3: Dashboard Plan (pipeline mode) ──────────────────
   async function generatePlan() {
     if (!datasetId) return;
     setStepStatus("plan", "loading");
@@ -97,6 +81,7 @@ export function useDasher() {
     try {
       const result = await api.generatePlan(datasetId);
       setPlan(result);
+      setPipelinePlan(result);
       setStepStatus("plan", "done");
     } catch (e) {
       setStepStatus("plan", "error");
@@ -104,13 +89,13 @@ export function useDasher() {
     }
   }
 
-  // ── Step 4: Create Metabase Dashboard ──────────────────────
+  // ── Step 4: Build dashboard (pipeline mode) ─────────────────
   async function createDashboard() {
     if (!datasetId) return;
     setStepStatus("dashboard", "loading");
     setStepError("dashboard", null);
     try {
-      const result = await api.createDashboard(datasetId);
+      const result = await api.buildDashboard(datasetId);
       setDashboardResult(result);
       setAgentResult(null);
       setStepStatus("dashboard", "done");
@@ -120,102 +105,127 @@ export function useDasher() {
     }
   }
 
-  // Get prior states of datasets
-async function rehydrate(id) {
-  try {
-    const state = await api.getDatasetState(id);
-    const {
-      upload_result,
-      semantics: sem,
-      plan: pl,
-      dashboard_result,
-      agent_result,
-    } = state;
+  // ── Agent mode: apply a finished SSE run's collected events ──
+  // Component owns useEventStream and calls startStream itself;
+  // once the stream ends it hands the full collected array here.
+  // rationale event is pulled out explicitly, everything else is trace.
+  function applyAgentEvents(events) {
+    const finishEvent = events.find(e => e.type === "finish");
+    const rationaleEvent = events.find(e => e.type === "rationale");
+    const trace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
 
-    setDatasetId(id);
-    setUploadResult(upload_result);
-    setSemantics(sem);
-    setPlan(pl);
-
-    // Only one of these will be non-null — set the correct one, clear the other.
-    if (agent_result) {
-      setAgentResult(agent_result);
-      setDashboardResult(null);
-    } else {
-      setDashboardResult(dashboard_result);
-      setAgentResult(null);
-    }
-
-    setStatus({
-      upload:    upload_result                       ? "done" : "idle",
-      semantics: sem                                 ? "done" : "idle",
-      plan:      pl                                  ? "done" : "idle",
-      dashboard: (agent_result || dashboard_result)  ? "done" : "idle",
+    setAgentResult({
+      published: false,
+      charts_built: finishEvent?.charts_built ?? [],
+      trace,
+      rationale: rationaleEvent?.text ?? "",
+      dashboard_title: rationaleEvent?.dashboard_title ?? "",
     });
-  } catch (e) {
-    // If state fetch fails, just start fresh — don't block the user
-    console.error("Rehydrate failed:", e.message);
+    setDashboardResult(null);
+    setStepStatus("dashboard", "done");
   }
-}
+
+  // ── Rehydrate from /state ───────────────────────────────────
+  async function rehydrate(id) {
+    try {
+      const state = await api.getDatasetState(id);
+      const {
+        upload_result,
+        semantics: sem,
+        pipeline_plan,
+        agent_plan,
+        dashboard_result,
+        agent_result,
+      } = state;
+
+      setDatasetId(id);
+      setUploadResult(upload_result);
+      setSemantics(sem);
+      setPipelinePlan(pipeline_plan);
+      setAgentPlan(agent_plan);
+      setPlan(pipeline_plan);
+
+      if (agent_result) {
+        setAgentResult(agent_result);
+        setDashboardResult(null);
+      } else {
+        setDashboardResult(dashboard_result);
+        setAgentResult(null);
+      }
+
+      setStatus({
+        upload:    upload_result ? "done" : "idle",
+        semantics: sem ? "done" : "idle",
+        plan:      pipeline_plan ? "done" : "idle",
+        dashboard: (agent_result || dashboard_result) ? "done" : "idle",
+      });
+    } catch (e) {
+      console.error("Rehydrate failed:", e.message);
+    }
+  }
 
   function reset() {
     setDatasetId(null);
     setUploadResult(null);
     setSemantics(null);
     setPlan(null);
+    setPipelinePlan(null);
+    setAgentPlan(null);
     setDashboardResult(null);
+    setAgentResult(null);
     setStatus(initialStatus);
-    setAgentResult(null)
     setErrors({});
   }
-  //------------ Card Creation bits-------
+
+  // ── Card mutation helpers (NL add/edit/delete) ──────────────
   function addCard(card) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: [...(prev.cards ?? []), card],
-    cards_created: (prev.cards_created ?? 0) + 1,
-  }))
-}
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: [...(prev.cards ?? []), card],
+      cards_created: (prev.cards_created ?? 0) + 1,
+    }));
+  }
 
-function replaceCard(cardId, card) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
-  }))
-}
+  function replaceCard(cardId, card) {
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
+    }));
+  }
 
-function removeCard(cardId) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
-    cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
-  }))
-}
-function setDashboardPublished(value) {
-  setDashboardResult(prev => ({ ...prev, published: value }))
-}
-function clearDashboardResult() {
-  setDashboardResult(null);
-}
+  function removeCard(cardId) {
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
+      cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
+    }));
+  }
 
-  // Everything a component might need, returned as one object
+  function setDashboardPublished(value) {
+    setDashboardResult(prev => ({ ...prev, published: value }));
+  }
+
+  function clearDashboardResult() {
+    setDashboardResult(null);
+  }
+
   return {
-    // Data
     datasetId,
     uploadResult,
     semantics,
     plan,
+    pipelinePlan,
+    agentPlan,
     dashboardResult,
     agentResult,
     conflict,
-    // Status per step
     status,
     errors,
-    // Actions
     upload,
     inferSemantics,
     generatePlan,
     createDashboard,
+    applyAgentEvents,
     rehydrate,
     resolveConflict,
     reset,
@@ -224,6 +234,6 @@ function clearDashboardResult() {
     removeCard,
     setDashboardPublished,
     setAgentResult,
-    clearDashboardResult
+    clearDashboardResult,
   };
 }
