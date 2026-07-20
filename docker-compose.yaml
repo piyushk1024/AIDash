@@ -1,4 +1,15 @@
 services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: dasheradmin
+      POSTGRES_PASSWORD: REDACTED
+      POSTGRES_DB: dasherdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
   fastapi:
     build:
       context: ./backend
@@ -14,3 +25,5 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       - PYTHONUNBUFFERED=1
+volumes:
+  pgdata:

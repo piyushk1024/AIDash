@@ -30,11 +30,14 @@ Rules — match the error to exactly one case below:
   alias used for the measure/aggregate value — matching exactly what the
   SQL actually returns as column names.
 - "Column '...' not found in query results" (lists the columns that ARE
-  available): the chart's x_alias/y_alias/series_alias don't match what the
-  SQL actually returns. Fix by either renaming the SQL's column aliases (AS
-  "...") to match x_alias/y_alias/series_alias, or updating
-  x_alias/y_alias/series_alias to match one of the listed available columns
-  — whichever requires the smaller change.
+  available): the chart's x_alias/y_alias/series_alias values don't match
+  what the SQL actually returns. Fix this by updating the x_alias/y_alias/
+  series_alias field VALUES to reference one of the listed available
+  columns. Do not rename SQL column aliases to the literal words
+  "x_alias", "y_alias", or "series_alias" — those are JSON field names,
+  not meaningful column names. If you do need to rename a SQL alias
+  instead, give it a real, descriptive name reflecting the data (e.g.
+  "error_count", "environment"), never the field name itself.  
 - "viz_params required" or an error about visualization/display
   configuration: add or fix the viz_params field — the shape it needs
   depends on chart_type (see guidance below). Do not touch sql for a pure

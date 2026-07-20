@@ -124,11 +124,31 @@ export const api = {
   deleteNLChart: (datasetId, cardId, mode = 'pipeline') =>
     request('DELETE', `/datasets/${datasetId}/dashboard/charts/${cardId}?mode=${mode}`),
 
-  login: (username, password) =>
-    request('POST', '/auth/login', { username, password }),
+  login: async (username, password) => {
+  const res = await fetch(`${BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || 'Login failed')
+  }
+  return res.json()
+  },
 
-  register: (username, password) =>
-    request('POST', '/auth/register', { username, password }),
+  register: async (username, password) => {
+    const res = await fetch(`${BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || 'Registration failed')
+    }
+    return res.json()
+  },
 
   publishDashboard: (datasetId, mode = 'pipeline') =>
     request('POST', `/datasets/${datasetId}/publish`, { mode }),

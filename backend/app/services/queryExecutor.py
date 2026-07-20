@@ -64,11 +64,10 @@ def _row_value(row: dict, alias: str, title: str):
         )
     return row[alias]
 
-
 def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
     chart_type = ChartType(chart["chart_type"])
     title = chart.get("chart_title", "")
-    layout = {"title": title}
+    layout = {"title": {"text": title}}
 
     if chart_type in PASSTHROUGH_TYPES:
         trace = _passthrough_trace(chart_type, chart, title)
@@ -99,6 +98,8 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             "x": [_row_value(r, x_alias, title) for r in rows],
             "y": [_row_value(r, y_alias, title) for r in rows],
         }
+        layout["xaxis"] = {"title": {"text": x_alias}}
+        layout["yaxis"] = {"title": {"text": y_alias}}
         return {"data": [trace], "layout": layout}
 
     if chart_type in DIMENSION_MEASURE_TYPES:
@@ -113,12 +114,23 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             x = [_row_value(r, x_alias, title) for r in rows]
             y = [_row_value(r, y_alias, title) for r in rows]
             data = [_single_trace(chart_type, x, y)]
+
+        # ROW charts flip x/y internally (see _single_trace) — axis titles
+        # follow the same swap so labels stay on the correct axis.
+        if chart_type == ChartType.ROW:
+            layout["xaxis"] = {"title": {"text": y_alias}}
+            layout["yaxis"] = {"title": {"text": x_alias}}
+        elif chart_type != ChartType.PIE:
+            layout["xaxis"] = {"title": {"text": x_alias}}
+            layout["yaxis"] = {"title": {"text": y_alias}}
         return {"data": data, "layout": layout}
+
     if chart_type in HISTOGRAM_TYPES:
         x_alias = chart.get("x_alias")
         if not x_alias:
             raise ValueError(f"x_alias required for chart type '{chart_type.value}' ({title})")
         trace = {"type": "histogram", "x": [_row_value(r, x_alias, title) for r in rows]}
+        layout["xaxis"] = {"title": {"text": x_alias}}
         return {"data": [trace], "layout": layout}
 
     if chart_type in DISTRIBUTION_TYPES:
@@ -129,10 +141,11 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         x_alias = chart.get("x_alias")
         if x_alias:
             trace["x"] = [_row_value(r, x_alias, title) for r in rows]
+            layout["xaxis"] = {"title": {"text": x_alias}}
+        layout["yaxis"] = {"title": {"text": y_alias}}
         return {"data": [trace], "layout": layout}
 
     raise ValueError(f"Unsupported chart type '{chart_type.value}' ({title})")
-
 
 def _require_aliases(chart_type: ChartType, x_alias, y_alias, title: str) -> None:
     if not x_alias or not y_alias:

@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { api } from '../../lib/api'
 import { useAutocomplete, AutocompleteInput } from './NLInput'
-// was: import Plot from 'react-plotly.js'
-import createPlotlyComponent from 'react-plotly.js/factory'
-import Plotly from '../../lib/plotly-custom'
-
-const Plot = createPlotlyComponent(Plotly)
+import Plot from 'react-plotly.js'
+// import createPlotlyComponent from 'react-plotly.js/factory'
+// import Plotly from '../../lib/plotly-custom'
+// const Plot = createPlotlyComponent(Plotly)
 
 // --- RenderedChartCard ---
 // Card shape: {card_id, chart_title, chart_type, rows, spec, healed, failed}.
@@ -65,6 +64,16 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
     )
   }
 
+  // Horizontal bar ('row') charts need height proportional to category
+  // count — a fixed height either clips long category lists or wastes
+  // space on short ones. ~28px per category + 100px baseline for
+  // title/axes/margins is the standard formula for this (same approach
+  // used across Highcharts, Chart.js, Plotly Dash for dynamic bar charts).
+  const rowCount = card.rows?.length ?? 0
+  const chartHeight = card.chart_type === 'row'
+    ? Math.max(320, rowCount * 28 + 100)
+    : 320
+
   return (
     <div className="border border-neutral-800 rounded p-2 relative group">
       <div className="hidden group-hover:flex absolute top-2 right-2 gap-2 z-10 bg-neutral-950/80 rounded px-1.5 py-1">
@@ -83,7 +92,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
           yaxis: { automargin: true, ...card.spec.layout?.yaxis },
            ...card.spec.layout }}
         useResizeHandler
-        style={{ width: '100%', height: '320px' }}
+        style={{ width: '100%', height: `${chartHeight}px` }}
         config={{ displayModeBar: false, responsive: true }}
       />
       {card.healed && (
@@ -189,21 +198,27 @@ export default function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:grid-flow-row-dense">
       {(cards ?? []).map(card => (
-        <RenderedChartCard
-          key={card.card_id ?? card.chart_title}
-          card={card}
-          fieldMap={fieldMap}
-          cardState={cardStates[card.card_id] ?? 'view'}
-          onEdit={() => setState(card.card_id, 'editing')}
-          onCancel={() => setState(card.card_id, 'view')}
-          onSubmitEdit={(value, selectedColumns) => handleSubmitEdit(card.card_id, value, selectedColumns)}
-          onRequestDelete={() => setState(card.card_id, 'confirm-delete')}
-          onConfirmDelete={() => handleConfirmDelete(card.card_id)}
-          editLoading={editLoading === card.card_id}
-          editError={editErrors[card.card_id]}
-        />
+        // Horizontal bar ('row') charts put category labels on the y-axis,
+        // where they compete with a fixed-width column — long labels get
+        // cramped in a half-width card. Giving 'row' charts the full row
+        // is a standard horizontal-bar-chart practice, not specific to any
+        // one dataset's label lengths.
+        <div key={card.card_id ?? card.chart_title} className={card.chart_type === 'row' ? 'md:col-span-2' : ''}>
+          <RenderedChartCard
+            card={card}
+            fieldMap={fieldMap}
+            cardState={cardStates[card.card_id] ?? 'view'}
+            onEdit={() => setState(card.card_id, 'editing')}
+            onCancel={() => setState(card.card_id, 'view')}
+            onSubmitEdit={(value, selectedColumns) => handleSubmitEdit(card.card_id, value, selectedColumns)}
+            onRequestDelete={() => setState(card.card_id, 'confirm-delete')}
+            onConfirmDelete={() => handleConfirmDelete(card.card_id)}
+            editLoading={editLoading === card.card_id}
+            editError={editErrors[card.card_id]}
+          />
+        </div>
       ))}
       <AddChartCard fieldMap={fieldMap} onAdd={handleAdd} />
     </div>
