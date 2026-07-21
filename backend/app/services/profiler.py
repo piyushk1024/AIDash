@@ -84,7 +84,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
     grouped_stats = {}
     for cat_col in categorical_cols:
         if df[cat_col].nunique() <= 20 and numeric_cols:
-            group = df.groupby(cat_col)[numeric_cols].mean().round(2)            
+            group = df.groupby(cat_col)[numeric_cols].mean().round(2)
             group_dict = group.to_dict()
             cleaned = {}
             for num_col, district_vals in group_dict.items():
@@ -93,6 +93,19 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
                     for k, v in district_vals.items()
                 }
             grouped_stats[cat_col] = cleaned
+
+        # Coefficient of variation across group means — flags flat/low-signal
+        # groupings before they reach chart planning.
+            spread = {}
+            for num_col in numeric_cols:
+                means = group[num_col]
+                mean_of_means = means.mean()
+                if mean_of_means and mean_of_means != 0:
+                    cv = _native((means.std() / abs(mean_of_means)))
+                else:
+                    cv = None
+                spread[num_col] = round(cv, 4) if cv is not None else None
+            grouped_stats[cat_col]["_spread_cv"] = spread
 
 
     profile_columns = []

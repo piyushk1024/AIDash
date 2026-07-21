@@ -60,6 +60,13 @@ Available columns (name | base_type | semantic_role):
 Dataset profile (stats, value_counts, correlations, grouped_stats):
 {profile_summary}
 
+Note on grouped_stats: each categorical grouping includes a "_spread_cv" entry
+per numeric column — the coefficient of variation (std / mean) across that
+column's group means. A low _spread_cv (below ~0.10) means the groups barely
+differ on that measure; a chart built on that pairing will look visually flat
+regardless of chart type. Use this to judge which (dimension, measure) pairs
+are actually worth charting.
+
 ---
 
 Reasoning pass:
@@ -81,6 +88,15 @@ doesn't support that many, more if it's unusually rich. Consider:
 Chart planning pass:
 For each question, plan one chart. Write PostgreSQL SQL that answers it directly.
 Alias all output columns clearly — Metabase uses aliases as axis labels.
+
+Before finalizing each chart, check _spread_cv for that chart's grouping
+column and measure. If it's low (below ~0.10), the comparison is essentially
+flat and not worth a chart in that form. Instead:
+- pick a different angle on the same columns (a different breakdown, a
+  highlight of actual outliers within the group, a ratio/derived metric), or
+- reframe it if the flatness itself is the finding (e.g. "failure rate is
+  uniform across all services" as a scalar/comparison stat), or
+- drop the question and use a different one from the reasoning pass
 
 HARD CONSTRAINTS — non-negotiable:
 - Only use columns from the available columns list above

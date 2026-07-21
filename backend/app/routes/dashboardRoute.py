@@ -18,6 +18,8 @@ from app.schemas.chartTypes import CHART_TYPE_VALUES
 from app.services.llm import LLMUnavailableError
 from starlette.concurrency import run_in_threadpool
 
+
+
 router = APIRouter()
 
 UPLOAD_DIR = settings.UPLOAD_DIR
@@ -140,13 +142,25 @@ async def build_dashboard(
         result, error = await build_card_with_healing(
             chart, field_map, db, existing_id=chart.get("card_id"),
         )
+        print("DEBUG error value:", error)
+        
         if error:
             errors.append(error)
             if is_llm_in_cooldown():
                 provider_unavailable = True
             continue
-        built_charts.append(result)
+        
+        print("DEBUG chart keys:", list(chart.keys()))
+        print("DEBUG result keys:", list(result.keys()) if result else "result is None")
 
+        # Persisted chart carries the union of the plan's chart definition
+        # (x_alias/y_alias/series_alias/viz_params — needed to rebuild or
+        # heal this chart again later) and the build result (card_id/rows/
+        # spec/healed — needed to render it without rebuilding). Merging
+        # onto `chart` rather than `result` keeps the plan fields even
+        # though cardBuilder's return value never carried them.
+        built_charts.append({**chart, **result})
+    
     updated_plan = {**plan, "mode": "pipeline", "charts": built_charts, "errors": errors}
     await update_dashboard_plan(db, dataset_id, updated_plan)
 

@@ -107,10 +107,17 @@ async def dispatch_build_and_add_chart(
         "step": step,
         "tool": "build_and_add_chart",
         "reasoning": reasoning,
+        "card_id": result.get("card_id") if result else None,
         "chart_title": chart_spec["chart_title"],
         "chart_type": chart_spec["chart_type"],
+        "sql": chart_spec["sql"],
+        "x_alias": chart_spec["x_alias"],
+        "y_alias": chart_spec["y_alias"],
         "series_alias": chart_spec["series_alias"],
         "viz_params": chart_spec["viz_params"],
+        "healed": healed,
+        "rows": result.get("rows") if result else None,
+        "spec": result.get("spec") if result else None,
         "observation": observation,
     }
     return observation, trace_entry, healed
@@ -174,8 +181,14 @@ async def dispatch_edit_existing_chart(
         "card_id": card_id,
         "chart_title": chart_spec["chart_title"],
         "chart_type": chart_spec["chart_type"],
+        "sql": chart_spec["sql"],
+        "x_alias": chart_spec["x_alias"],
+        "y_alias": chart_spec["y_alias"],
         "series_alias": chart_spec["series_alias"],
         "viz_params": chart_spec["viz_params"],
+        "healed": healed,
+        "rows": result.get("rows") if result else None,
+        "spec": result.get("spec") if result else None,
         "observation": observation,
     }
     return observation, trace_entry, healed

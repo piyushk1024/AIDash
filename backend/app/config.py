@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env")
+    model_config = ConfigDict(env_file=".env", )
     
     UPLOAD_DIR: Path #= Path("app/uploads")
     LLM_API_KEY: str
@@ -19,5 +19,8 @@ class Settings(BaseSettings):
     JWT_EXPIRY_HOURS: int = 24
     AGENT_MAX_INSPECT_CALLS: int = 3
     AGENT_MAX_ITERATIONS: int = 12
+    POSTGRES_USER: str = ""
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_DB: str = ""
 
 settings = Settings()

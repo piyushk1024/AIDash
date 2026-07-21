@@ -1,11 +1,14 @@
 import json
 import asyncpg
 import decimal
+import datetime
 from app.config import settings
 
 def json_default(obj):
     if isinstance(obj, decimal.Decimal):
         return float(obj)
+    if isinstance(obj, (datetime.date, datetime.datetime)):
+        return obj.isoformat()
     raise TypeError(f"Object of type {obj.__class__.__name__} is not JSON serializable")
 
 
@@ -89,7 +92,15 @@ async def persist_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict
         )
 
 
-async def update_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict):
+async def update_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict, mode: str | None = None):
+    # mode scopes the update to the correct row when pipeline and agent
+    # plans coexist for the same dataset — without this filter, whichever
+    # row is most recently created wins regardless of which mode the
+    # caller actually meant to update, silently overwriting the other
+    # mode's plan. Defaults to reading mode off `plan` itself so existing
+    # callers that already build a plan dict with "mode" keep working
+    # without changes; pass mode explicitly when plan might not have it.
+    effective_mode = mode or plan.get("mode")
     async with pool.acquire() as conn:
         await conn.execute(
             """
@@ -98,12 +109,27 @@ async def update_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict)
             WHERE plan_id = (
                 SELECT plan_id FROM dashboard_plans
                 WHERE dataset_id = $2
+                    AND ($3::text IS NULL OR COALESCE(plan_json->>'mode', 'pipeline') = $3)
                 ORDER BY created_at DESC
                 LIMIT 1
             )
             """,
-            plan, dataset_id,
+            plan, dataset_id, effective_mode,
         )
+    # async with pool.acquire() as conn:
+    #     await conn.execute(
+    #         """
+    #         UPDATE dashboard_plans
+    #         SET plan_json = $1
+    #         WHERE plan_id = (
+    #             SELECT plan_id FROM dashboard_plans
+    #             WHERE dataset_id = $2
+    #             ORDER BY created_at DESC
+    #             LIMIT 1
+    #         )
+    #         """,
+    #         plan, dataset_id,
+    #     )
 
 
 # ── Dataset metadata ──────────────────────────────────────────
