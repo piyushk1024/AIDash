@@ -1,15 +1,47 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import Plot from 'react-plotly.js'
 import { api } from '../lib/api'
+
+function PublicChartCard({ chart }) {
+  if (!chart.spec) {
+    return (
+      <div className="border border-red-500/30 rounded p-4 font-mono text-xs text-red-400">
+        ✕ {chart.chart_title ?? 'Untitled chart'} — could not be built
+      </div>
+    )
+  }
+
+  const rowCount = chart.rows?.length ?? 0
+  const chartHeight = chart.chart_type === 'row'
+    ? Math.max(320, rowCount * 28 + 100)
+    : 320
+
+  return (
+    <div className="border border-neutral-800 rounded p-2">
+      <Plot
+        data={chart.spec.data ?? []}
+        layout={{ autosize: true,
+          margin: { t: 32, r: 16, b: 60, l: 60 },
+          xaxis: { automargin: true, ...chart.spec.layout?.xaxis },
+          yaxis: { automargin: true, ...chart.spec.layout?.yaxis },
+          ...chart.spec.layout }}
+        useResizeHandler
+        style={{ width: '100%', height: `${chartHeight}px` }}
+        config={{ displayModeBar: false, responsive: true }}
+      />
+    </div>
+  )
+}
 
 export default function SharePage() {
   const { datasetId } = useParams()
-  const [publicUrl, setPublicUrl] = useState(null)
+  const [data, setData] = useState(null)
   const [error, setError] = useState(null)
 
   useEffect(() => {
     api.getPublicDashboard(datasetId)
-      .then(res => setPublicUrl(res.public_url))
+      .then(res => setData(res))
       .catch(() => setError('This dashboard is not available.'))
   }, [datasetId])
 
@@ -27,19 +59,37 @@ export default function SharePage() {
           <div className="font-mono text-sm text-neutral-500">{error}</div>
         )}
 
-        {!error && !publicUrl && (
+        {!error && !data && (
           <div className="font-mono text-xs text-neutral-600 animate-pulse">
             Loading dashboard...
           </div>
         )}
 
-        {publicUrl && (
-          <iframe
-            src={`${publicUrl}#hide_download_button=true`}
-            title="Dasher Dashboard"
-            className="w-full rounded border border-neutral-800"
-            style={{ height: '80vh' }}
-          />
+        {data && (
+          <>
+            {data.dashboard_title && (
+              <h1 className="font-mono text-lg text-neutral-200 mb-2">
+                {data.dashboard_title}
+              </h1>
+            )}
+
+            {data.rationale && (
+              <div className="border border-amber-400/20 rounded p-4 mb-6 font-mono text-xs text-neutral-400 leading-relaxed">
+                {data.rationale}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:grid-flow-row-dense">
+              {(data.charts ?? []).map((chart, i) => (
+                <div
+                  key={chart.chart_title ?? i}
+                  className={chart.chart_type === 'row' ? 'md:col-span-2' : ''}
+                >
+                  <PublicChartCard chart={chart} />
+                </div>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

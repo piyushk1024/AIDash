@@ -328,6 +328,33 @@ async def get_dataset_owner(pool: asyncpg.Pool, dataset_id: str) -> str | None:
     )
     return row["user_id"] if row else None
 
+# ──dashboard snapshot ───────────────────────────────────────────────────
+
+async def save_published_snapshot(pool: asyncpg.Pool, dataset_id: str, mode: str, snapshot: dict):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO published_snapshots (dataset_id, mode, snapshot_json, published_at)
+            VALUES ($1, $2, $3, NOW())
+            ON CONFLICT (dataset_id, mode) DO UPDATE
+            SET snapshot_json = EXCLUDED.snapshot_json,
+                published_at  = NOW()
+            """,
+            dataset_id, mode, snapshot,
+        )
+
+
+async def get_published_snapshot(pool: asyncpg.Pool, dataset_id: str, mode: str):
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT snapshot_json FROM published_snapshots
+            WHERE dataset_id = $1 AND mode = $2
+            """,
+            dataset_id, mode,
+        )
+        return row["snapshot_json"] if row else None
+
 # ── Publish ───────────────────────────────────────────────────
 
 async def get_published_dashboard(pool: asyncpg.Pool, dataset_id: str):
@@ -371,18 +398,35 @@ async def persist_profile_json(pool: asyncpg.Pool, dataset_id: str, profile: dic
         )
 
 async def mark_plan_stale(pool: asyncpg.Pool, dataset_id: str) -> None:
+    # Marks the latest row for EACH mode (pipeline, agent) stale, not just
+    # the single most-recently-created row overall — a hint change
+    # invalidates both modes' plans if both exist, since they're both
+    # derived from the same (now outdated) semantics.
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE dashboard_plans
             SET stale              = true,
                 generation_counter = generation_counter + 1
-            WHERE plan_id = (
-                SELECT plan_id FROM dashboard_plans
+            WHERE plan_id IN (
+                SELECT DISTINCT ON (COALESCE(plan_json->>'mode', 'pipeline')) plan_id
+                FROM dashboard_plans
                 WHERE dataset_id = $1
-                ORDER BY created_at DESC
-                LIMIT 1
+                ORDER BY COALESCE(plan_json->>'mode', 'pipeline'), created_at DESC
             )
             """,
             dataset_id,
         )
+
+async def is_plan_stale(pool: asyncpg.Pool, dataset_id: str, mode: str) -> bool:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """
+            SELECT stale FROM dashboard_plans
+            WHERE dataset_id = $1
+              AND COALESCE(plan_json->>'mode', 'pipeline') = $2
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            dataset_id, mode,
+        )
+        return bool(row["stale"]) if row else False

@@ -5,6 +5,7 @@ from app.services.database import (
     get_cached_dashboard_plan,
     persist_dashboard_plan,
     update_dashboard_plan,
+    is_plan_stale,
     get_dataset_metadata,
     get_dataset_owner,
     persist_profile_json
@@ -52,17 +53,18 @@ def validate_and_clean_charts(charts: list) -> list:
 
 
 @router.post("/generate-dashboard-plan/{dataset_id}")
+@router.post("/generate-dashboard-plan/{dataset_id}")
 async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depends(require_editor)):
-
 
     owner = await get_dataset_owner(db, dataset_id)    
     if owner != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-    cached = await get_cached_dashboard_plan(db, dataset_id, mode="pipeline")
-    if cached:
-        return cached
-    
 
+    cached = await get_cached_dashboard_plan(db, dataset_id, mode="pipeline")
+    stale = await is_plan_stale(db, dataset_id, mode="pipeline") if cached else False
+    # print(f"STALE CHECK: cached={bool(cached)} stale={stale}")
+    if cached and not stale:
+        return cached
 
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
@@ -98,7 +100,6 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     await persist_dashboard_plan(db, dataset_id, plan)
     
     return plan
-
 
 @router.post("/datasets/{dataset_id}/dashboard/build")
 async def build_dashboard(
@@ -150,8 +151,8 @@ async def build_dashboard(
                 provider_unavailable = True
             continue
         
-        print("DEBUG chart keys:", list(chart.keys()))
-        print("DEBUG result keys:", list(result.keys()) if result else "result is None")
+        # print("DEBUG chart keys:", list(chart.keys()))
+        # print("DEBUG result keys:", list(result.keys()) if result else "result is None")
 
         # Persisted chart carries the union of the plan's chart definition
         # (x_alias/y_alias/series_alias/viz_params — needed to rebuild or

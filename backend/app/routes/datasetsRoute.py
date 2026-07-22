@@ -6,9 +6,13 @@ from app.services.database import (
     get_dataset_owner,
     get_dataset_metadata,
     get_cached_dashboard_plan,
+    is_plan_stale,
     get_published_dashboard,
     set_published,
+    get_published_snapshot,
+    save_published_snapshot
 )
+
 from app.config import settings
 
 router = APIRouter()
@@ -90,7 +94,6 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
 class PublishRequest(BaseModel):
     mode: str = "pipeline"
 
-
 @router.post("/datasets/{dataset_id}/publish")
 async def publish_dashboard(
     dataset_id: str,
@@ -114,6 +117,27 @@ async def publish_dashboard(
     metadata = await get_dataset_metadata(db, dataset_id)
     currently_published = metadata.get("published", False) and metadata.get("published_mode") == body.mode
     new_state = not currently_published
+
+    if new_state:
+        # Freeze a snapshot at publish time — strip "sql" so the public
+        # route never exposes raw query text, keep only what's needed
+        # to render the chart.
+        snapshot = {
+            "charts": [
+                {
+                    "chart_title": c.get("chart_title"),
+                    "chart_type":  c.get("chart_type"),
+                    "rows":        c.get("rows"),
+                    "spec":        c.get("spec"),
+                }
+                for c in plan.get("charts", [])
+                ],
+                "rationale": plan.get("rationale", ""),
+                "dashboard_title": plan.get("dashboard_title", ""),            
+        }
+        # print(snapshot)
+        await save_published_snapshot(db, dataset_id, body.mode, snapshot)
+
     await set_published(db, dataset_id, new_state, mode=body.mode if new_state else None)
     return {"published": new_state, "mode": body.mode if new_state else None}
 
@@ -124,11 +148,13 @@ async def get_public_dashboard(dataset_id: str, db=Depends(get_db)):
     if not row or not row["published"] or not row["published_mode"]:
         raise HTTPException(status_code=404, detail="Dashboard not available")
 
-    plan = await get_cached_dashboard_plan(db, dataset_id, mode=row["published_mode"])
-    if not plan:
+    snapshot = await get_published_snapshot(db, dataset_id, row["published_mode"])
+    if not snapshot:
         raise HTTPException(status_code=404, detail="Dashboard not available")
 
     return {
         "mode": row["published_mode"],
-        "charts": plan.get("charts", []),
+        "charts": snapshot.get("charts", []),
+        "rationale": snapshot.get("rationale"),
+        "dashboard_title": snapshot.get("dashboard_title"),
     }
