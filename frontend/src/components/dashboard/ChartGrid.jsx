@@ -1,7 +1,11 @@
 import { useState } from 'react'
 import { api } from '../../lib/api'
-import { useAutocomplete, AutocompleteInput } from './NLInput'
+// import { useAutocomplete, AutocompleteInput } from './NLInput'
 import Plot from 'react-plotly.js'
+
+import { useAutocomplete } from './useAutocomplete'
+import { AutocompleteInput } from './NLInput'
+
 // import createPlotlyComponent from 'react-plotly.js/factory'
 // import Plotly from '../../lib/plotly-custom'
 // const Plot = createPlotlyComponent(Plotly)

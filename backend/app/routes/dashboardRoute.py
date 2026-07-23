@@ -52,7 +52,7 @@ def validate_and_clean_charts(charts: list) -> list:
     return cleaned
 
 
-@router.post("/generate-dashboard-plan/{dataset_id}")
+
 @router.post("/generate-dashboard-plan/{dataset_id}")
 async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depends(require_editor)):
 
@@ -143,7 +143,7 @@ async def build_dashboard(
         result, error = await build_card_with_healing(
             chart, field_map, db, existing_id=chart.get("card_id"),
         )
-        print("DEBUG error value:", error)
+        # print("DEBUG error value:", error)
         
         if error:
             errors.append(error)

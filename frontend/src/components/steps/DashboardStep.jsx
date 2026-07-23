@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import InsightsPanel from './InsightsPanel'
 import AgentTrace from './AgentTrace'
 import HealingSummary from './HealingSummary'
@@ -16,25 +16,26 @@ export default function DashboardStep({ dasher, isActive }) {
 
   const [activeTab, setActiveTab] = useState('dashboard')
   const [publishing, setPublishing] = useState(false)
-  const [published, setPublished] = useState(dashboardResult?.published ?? false)
+  // const [published, setPublished] = useState(dashboardResult?.published ?? false)
   const [copyLabel, setCopyLabel] = useState('Copy share link')
   const [showPreBuild, setShowPreBuild] = useState(false)
 
   const isDone = status.dashboard === 'done'
   const fieldMap = uploadResult?.field_map ?? {}
+  const published = (agentResult ?? dashboardResult)?.published ?? false
 
   // Sync published from whichever result is active — covers rehydration case
   // where agentResult/dashboardResult arrive after component has mounted.
-  useEffect(() => {
-    const active = agentResult ?? dashboardResult
-    if (active?.published !== undefined) setPublished(active.published)
-  }, [agentResult, dashboardResult])
+  // useEffect(() => {
+  //   const active = agentResult ?? dashboardResult
+  //   if (active?.published !== undefined) setPublished(active.published)
+  // }, [agentResult, dashboardResult])
 
   async function handlePublishToggle(publishMode) {
     setPublishing(true)
     try {
       const result = await api.publishDashboard(datasetId, publishMode)
-      setPublished(result.published)
+      // setPublished(result.published)
       if (publishMode === 'agent') {
         setAgentResult(prev => ({ ...prev, published: result.published }))
       } else {

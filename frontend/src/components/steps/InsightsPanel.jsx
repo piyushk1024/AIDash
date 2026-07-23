@@ -10,9 +10,11 @@ export default function InsightsPanel({ datasetId }) {
 
   useEffect(() => {
     if (!datasetId) return
-    setFetching(true)
+    let cancelled = false
+    // setFetching(true)
     api.getInsights(datasetId)
       .then(res => {
+         if (cancelled) return
         setHistory(
           (res.insights ?? []).map((entry, i) => ({
             ...entry,
@@ -22,7 +24,8 @@ export default function InsightsPanel({ datasetId }) {
         )
       })
       .catch(() => {})
-      .finally(() => setFetching(false))
+      .finally(() => { if (!cancelled) setFetching(false) })
+      return () => {cancelled = true}
   }, [datasetId])
 
   async function handleAsk() {
