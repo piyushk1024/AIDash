@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS idx_dataset_metadata_checksum_user;

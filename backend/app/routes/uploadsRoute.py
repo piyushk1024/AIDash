@@ -2,7 +2,7 @@ import hashlib
 from pathlib import Path
 from uuid import uuid4, UUID
 from app.config import settings
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.database import (
     persist_dataset_metadata,
@@ -22,6 +22,8 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 @router.post("/upload-csv")
 async def upload_csv(
     file: UploadFile = File(...),
+    name: str | None = Form(None),
+    comment: str | None = Form(None),
     replace: bool = False,
     force_new: bool = False,
     db=Depends(get_db),
@@ -97,10 +99,11 @@ async def upload_csv(
     await persist_dataset_metadata(
         db,
         dataset_id=dataset_id,
-        table_name=table_name,
-        #metabase_table_id=None,  # TODO: drop this param once database.py migration lands (Fix Backlog)
+        table_name=table_name,        
         field_map=field_map,
         user_id=current_user.user_id,
+        name=name,
+        comment=comment,
         original_filename=file.filename,
         file_checksum=checksum,
     )
@@ -111,6 +114,8 @@ async def upload_csv(
         "table_name": table_name,
         "row_count": load_result["row_count"],
         "field_map": field_map,
+        "name": name,
+        "comment": comment,
     }
 
 

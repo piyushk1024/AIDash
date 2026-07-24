@@ -140,6 +140,8 @@ async def persist_dataset_metadata(
     table_name: str,
     field_map: dict,
     user_id: str,
+    name: str | None = None,
+    comment: str | None = None,
     original_filename: str | None = None,
     file_checksum: str | None = None,
 ):
@@ -147,26 +149,29 @@ async def persist_dataset_metadata(
         await conn.execute(
             """
             INSERT INTO dataset_metadata
-                (dataset_id, table_name, field_map, user_id,
+                (dataset_id, table_name, field_map, user_id, name, comment,
                  original_filename, file_checksum)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             ON CONFLICT (dataset_id) DO UPDATE
             SET table_name        = EXCLUDED.table_name,
                 field_map         = EXCLUDED.field_map,
                 user_id           = EXCLUDED.user_id,
+                name              = EXCLUDED.name,
+                comment           = EXCLUDED.comment,
                 original_filename = EXCLUDED.original_filename,
                 file_checksum     = EXCLUDED.file_checksum,
                 updated_at        = NOW()
             """,
-            dataset_id, table_name, field_map, user_id,
+            dataset_id, table_name, field_map, user_id, name, comment,
             original_filename, file_checksum,
         )
-
+    
 async def get_dataset_metadata(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT table_name, field_map, published, published_mode, user_id
+            SELECT table_name, field_map, published, published_mode, user_id,
+                   name, comment
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -193,7 +198,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         metadata = await conn.fetchrow(
             """
-            SELECT table_name, field_map, published, published_mode
+            SELECT table_name, field_map, published, published_mode, name, comment
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,

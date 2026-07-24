@@ -109,18 +109,19 @@ export function useDasher() {
   // Component owns useEventStream and calls startStream itself;
   // once the stream ends it hands the full collected array here.
   // rationale event is pulled out explicitly, everything else is trace.
-  function applyAgentEvents(events) {
+  function applyAgentEvents(events, isNudge = false) {
     const finishEvent = events.find(e => e.type === "finish");
     const rationaleEvent = events.find(e => e.type === "rationale");
-    const trace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
+    const newTrace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
 
-    setAgentResult({
+    setAgentResult(prev => ({
       published: false,
       charts_built: finishEvent?.charts_built ?? [],
-      trace,
-      rationale: rationaleEvent?.text ?? "",
-      dashboard_title: rationaleEvent?.dashboard_title ?? "",
-    });
+      trace: isNudge ? [...(prev?.trace ?? []), ...newTrace] : newTrace,
+      rationale: rationaleEvent?.text ?? (isNudge ? prev?.rationale ?? "" : ""),
+      dashboard_title: rationaleEvent?.dashboard_title ?? (isNudge ? prev?.dashboard_title ?? "" : ""),
+    }));
+
     setDashboardResult(null);
     setStepStatus("dashboard", "done");
   }

@@ -10,7 +10,6 @@ from app.services.database import (
     set_published,
     get_published_snapshot,
     save_published_snapshot,
-    is_plan_stale
 )
 
 from app.config import settings

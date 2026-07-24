@@ -1,6 +1,54 @@
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
+/* ── Dasher design system tokens (Launch Card + onward) ──────
+   Raw values live here as CSS vars so .dark can override them;
+   @theme below just maps Tailwind utilities onto these vars. */
+:root {
+  --dasher-bg: #F3EEE3;
+  --dasher-surface: #FFFFFF;
+  --dasher-fg: #171310;
+  --dasher-muted: #6E6558;       /* also doubles as the border color, per spec */
+  --dasher-accent: #0042CC;
+  --dasher-accent-fg: #FFFFFF;   /* text/icon color on top of accent fills */
+  --dasher-accent-wash-strong: #C9DFFF;
+  --dasher-accent-wash-soft: #E5EFFF;
+  --dasher-danger: #C21725;
+  --dasher-warning: #B66E00;
+}
+
+.dark {
+  --dasher-bg: #171310;
+  --dasher-surface: #211C16;
+  --dasher-fg: #F3EEE3;
+  --dasher-muted: #9C9282;
+  --dasher-accent: #FAC131;
+  --dasher-accent-fg: #171310;
+  --dasher-accent-wash-strong: #22375E;
+  --dasher-accent-wash-soft: #1F293A;
+  --dasher-danger: #E64343;
+  --dasher-warning: #EAB532;
+}
+
+@theme {
+  --color-bg: var(--dasher-bg);
+  --color-surface: var(--dasher-surface);
+  --color-fg: var(--dasher-fg);
+  --color-muted: var(--dasher-muted);
+  --color-accent: var(--dasher-accent);
+  --color-accent-fg: var(--dasher-accent-fg);
+  --color-accent-wash-strong: var(--dasher-accent-wash-strong);
+  --color-accent-wash-soft: var(--dasher-accent-wash-soft);
+  --color-danger: var(--dasher-danger);
+  --color-warning: var(--dasher-warning);
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --radius-icon: 6px;
+}
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

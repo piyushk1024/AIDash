@@ -1,10 +1,8 @@
 services:
   postgres:
     image: postgres:16
-    environment:
-      POSTGRES_USER: dasheradmin
-      POSTGRES_PASSWORD: REDACTED
-      POSTGRES_DB: dasherdb
+    env_file:
+      - ./backend/.env
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
