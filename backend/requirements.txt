@@ -63,11 +63,11 @@ pluggy==1.6.0
 propcache==0.5.2
 proto-plus==1.27.2
 protobuf==5.29.6
-pyasn1==0.6.3
+pyasn1>=0.6.4
 pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.12.5
-pydantic-settings==2.14.2
+pydantic-settings>=2.14.2
 pydantic_core==2.41.5
 Pygments==2.20.0
 PyJWT==2.13.0

@@ -92,7 +92,7 @@ function buildAgentSteps(events) {
     { key: 'semantics', label: 'SEMANTICS' },
     { key: 'agent_run', label: 'AGENT RUN' },
   ].map(({ key, label }) => {
-    let status = 'pending'
+    let status
     let detail = ''
 
     if (key === 'profile') {
@@ -111,7 +111,9 @@ function buildAgentSteps(events) {
       }
     }
 
-    if (errorEvent && errorEvent.phase === key) status = 'error'
+    if (errorEvent && (errorEvent.phase === key || (errorEvent.phase === 'build' && key === 'agent_run'))) {
+       status = 'error'
+    }
     return { key, label, status, detail, time: '' }
   })
 
