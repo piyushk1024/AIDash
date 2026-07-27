@@ -23,7 +23,7 @@ jobs:
       runs-on: ubuntu-latest
       continue-on-error: true
       permissions:
-      contents: read      
+        contents: read      
       steps:
         - uses: actions/checkout@v4
         - uses: actions/setup-node@v4
