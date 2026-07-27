@@ -104,7 +104,59 @@ export function useDasher() {
       setStepError("dashboard", e.message);
     }
   }
+// ── One-shot launch: apply a finished /datasets/launch/stream run ──
+  // Component owns useEventStream and calls startStream itself with a
+  // FormData body; once the stream ends it hands the full collected
+  // array + mode here. Mirrors rehydrate()'s end state so downstream
+  // steps (semantics/plan/dashboard) read the same way post-launch.
+  function applyLaunchEvents(events, mode) {
+    const createdEvent = events.find(e => e.type === "dataset_created");
+    if (createdEvent) {
+      setDatasetId(createdEvent.dataset_id);
+      setStepStatus("upload", "done");
+    }
 
+    const profileDone = events.find(e => e.type === "step_done" && e.phase === "profile");
+    if (profileDone) {
+      setUploadResult(prev => ({ ...(prev ?? {}), profile: profileDone.profile }));
+    }
+
+    const semanticsDone = events.find(e => e.type === "step_done" && e.phase === "semantics");
+    if (semanticsDone) {
+      setSemantics(semanticsDone.semantics);
+      setStepStatus("semantics", "done");
+    }
+
+    const errorEvent = events.find(e => e.type === "phase_error");
+    if (errorEvent) {
+      setStepStatus(errorEvent.phase ?? "dashboard", "error");
+      setStepError(errorEvent.phase ?? "dashboard", errorEvent.error);
+      return;
+    }
+
+    if (mode === "pipeline") {
+      const planDone = events.find(e => e.type === "step_done" && e.phase === "plan");
+      if (planDone) {
+        setPlan(planDone.plan);
+        setPipelinePlan(planDone.plan);
+        setStepStatus("plan", "done");
+      }
+      const finishEvent = events.find(e => e.type === "finish");
+      if (finishEvent) {
+        setDashboardResult({
+          cards: finishEvent.charts_built,
+          cards_created: finishEvent.charts_built.length,
+          errors: finishEvent.errors,
+        });
+        setAgentResult(null);
+        setStepStatus("dashboard", "done");
+      }
+    } else {
+      applyAgentEvents(events, false);
+    }
+  }
+
+  
   // ── Agent mode: apply a finished SSE run's collected events ──
   // Component owns useEventStream and calls startStream itself;
   // once the stream ends it hands the full collected array here.
@@ -226,7 +278,8 @@ export function useDasher() {
     inferSemantics,
     generatePlan,
     createDashboard,
-    applyAgentEvents,
+    applyLaunchEvents,
+    applyAgentEvents,    
     rehydrate,
     resolveConflict,
     reset,

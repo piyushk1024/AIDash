@@ -168,6 +168,7 @@ export const api = {
   // and POSTs whatever body the caller passes (e.g. { goal, nudge }).
   agentStreamUrl: (datasetId) =>
     `${BASE}/datasets/${datasetId}/dashboard/agent/stream`,
+    launchStreamUrl: () => `${BASE}/datasets/launch/stream`,
 
   // PDF export (agent-mode only). Backend renders the report from
   // already-captured chart images (Plotly.toImage() per card, done

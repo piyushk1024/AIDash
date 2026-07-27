@@ -9,6 +9,7 @@ import PlanStep from './components/steps/PlanStep'
 import DashboardStep from './components/steps/DashboardStep'
 import AuthPage from './components/AuthPage'
 import SharePage from './components/sharepage'
+import LaunchCard from './components/steps/LaunchCard'
 
 const STEPS = [
   { key: 'upload',    number: '01', label: 'Upload Dataset' },
@@ -19,10 +20,10 @@ const STEPS = [
 
 function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
   return (
-    <header className="border-b border-neutral-200 dark:border-neutral-800 px-8 py-4 flex items-center justify-between sticky top-0 bg-white dark:bg-neutral-950 z-10">
+    <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
       <div className="flex items-center gap-3">
-        <div className="w-5 h-5 bg-amber-400 rounded-sm rotate-45 shrink-0" />
-        <span className="font-mono text-sm tracking-widest uppercase text-neutral-500 dark:text-neutral-400">
+        <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
+        <span className="font-display font-medium text-[18px] tracking-wide uppercase text-fg">
           Dasher
         </span>
       </div>
@@ -30,27 +31,27 @@ function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
         {phase === 'wizard' && (
           <button
             onClick={onGoHome}
-            className="flex items-center gap-1.5 font-mono text-xs text-neutral-400 hover:text-amber-400 transition-colors tracking-wider uppercase group"
+            className="flex items-center gap-1.5 font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase group"
           >
             <span className="group-hover:-translate-x-0.5 transition-transform duration-150">←</span>
             <span>Home</span>
           </button>
         )}
-        <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+        <span className="font-mono text-xs text-muted">
           {user?.username}
         </span>
         <button
           onClick={onLogout}
-          className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors tracking-wider uppercase"
+          className="font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase"
         >
           Sign out
         </button>
         <button
           onClick={() => onToggleDark()}
-          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-icon border border-muted hover:border-accent transition-colors"
           title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          <span className="text-neutral-400 text-xs">{dark ? '☀' : '☾'}</span>
+          <span className="text-muted text-xs">{dark ? '☀' : '☾'}</span>
         </button>
       </div>
     </header>
@@ -132,10 +133,15 @@ function DasherApp() {
     setPhase('pick')
   }
 
+  async function handleLaunchDone() {
+  const res = await api.listDatasets().catch(() => null)
+  if (res) setDatasets(res.datasets ?? [])
+  }
+
   if (phase === 'pick') {
     return (
       <div className={dark ? 'dark' : ''}>
-        <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
+        <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
           <Header
             phase={phase}
             onGoHome={handleGoHome}
@@ -145,32 +151,32 @@ function DasherApp() {
             onToggleDark={() => setDark(d => !d)}
           />
           <div className="max-w-xl mx-auto px-8 py-16">
-            <h1 className="font-mono text-xs tracking-widest uppercase text-neutral-400 mb-1">
+            <h1 className="font-mono text-[10.5px] tracking-wider uppercase text-muted mb-1">
               AI-Enabled Dashboarding
             </h1>
-            <p className="font-mono text-2xl text-neutral-900 dark:text-neutral-100 mb-10">
+            <p className="font-display font-semibold text-2xl text-fg mb-10">
               Continue a dataset or start fresh
             </p>
             {picking ? (
-              <p className="font-mono text-xs text-neutral-500 animate-pulse">Loading datasets...</p>
+              <p className="font-mono text-xs text-muted animate-pulse">Loading datasets...</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {datasets.length === 0 && (
-                  <p className="font-mono text-xs text-neutral-600 mb-2">No datasets yet.</p>
+                  <p className="font-mono text-xs text-muted mb-2">No datasets yet.</p>
                 )}
                 {datasets.map(ds => (
                   <div key={ds.dataset_id} className="flex items-center gap-2">
                     <button
                       onClick={() => handlePickDataset(ds.dataset_id)}
-                      className="flex-1 text-left px-4 py-3 rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 hover:bg-amber-400/5 font-mono text-sm transition-all duration-150"
+                      className="flex-1 text-left px-4 py-3 rounded-card border border-muted hover:border-accent hover:bg-accent-wash-soft font-mono text-sm transition-all duration-150"
                     >
-                      <span className="text-neutral-900 dark:text-neutral-100">{ds.original_filename}</span>
-                      <span className="ml-3 text-xs text-neutral-400">{ds.dataset_id.slice(0, 8)}</span>
+                      <span className="text-fg">{ds.original_filename}</span>
+                      <span className="ml-3 text-xs text-muted">{ds.dataset_id.slice(0, 8)}</span>
                     </button>
                     <button
                       onClick={() => handleDeleteDataset(ds.dataset_id)}
                       title="Delete dataset"
-                      className="w-9 h-9 flex items-center justify-center rounded border border-transparent hover:border-red-500/40 hover:text-red-400 font-mono text-xs text-neutral-500 transition-all duration-150"
+                      className="w-9 h-9 flex items-center justify-center rounded-icon border border-transparent hover:border-danger/40 hover:text-danger font-mono text-xs text-muted transition-all duration-150"
                     >
                       ✕
                     </button>
@@ -178,7 +184,7 @@ function DasherApp() {
                 ))}
                 <button
                   onClick={handleStartFresh}
-                  className="mt-4 text-left px-4 py-3 rounded border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-amber-400 dark:hover:border-amber-400 hover:bg-amber-400/5 font-mono text-sm text-neutral-400 hover:text-amber-400 transition-all duration-150"
+                  className="mt-4 text-left px-4 py-3 rounded-card border border-dashed border-muted hover:border-accent hover:bg-accent-wash-soft font-mono text-sm text-muted hover:text-accent transition-all duration-150"
                 >
                   + Start fresh
                 </button>
@@ -201,37 +207,44 @@ function DasherApp() {
           dark={dark}
           onToggleDark={() => setDark(d => !d)}
         />
-        <div className="max-w-5xl mx-auto px-8 py-10 flex gap-16">
-          <nav className="flex flex-col gap-6 pt-1 shrink-0 w-36">
-            {STEPS.map(step => {
-              const isDone   = status[step.key] === 'done'
-              const isActive = step.key === activeStep
-              const isLocked = !isDone && !isActive
-              return (
-                <button
-                  key={step.key}
-                  disabled={!isDone}
-                  onClick={() => isDone && toggleExpanded(step.key)}
-                  title={isDone ? 'Click to expand / collapse' : undefined}
-                  className={`flex items-center gap-3 text-left transition-opacity duration-150 ${isDone ? 'cursor-pointer' : 'cursor-default'} ${isLocked ? 'opacity-40' : ''}`}
-                >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-mono text-xs transition-all duration-300 ${isDone ? 'bg-amber-400 text-neutral-950' : ''} ${isActive ? 'border-2 border-amber-400 text-amber-400' : ''} ${isLocked ? 'border border-neutral-300 dark:border-neutral-700 text-neutral-400' : ''}`}>
-                    {isDone ? '✓' : step.number}
-                  </div>
-                  <span className={`font-mono text-xs tracking-wider uppercase leading-tight ${isActive ? 'text-neutral-900 dark:text-neutral-100' : ''} ${isDone ? 'text-neutral-400 dark:text-neutral-500' : ''} ${isLocked ? 'text-neutral-300 dark:text-neutral-700' : ''}`}>
-                    {step.label}
-                  </span>
-                </button>
-              )
-            })}
-          </nav>
-          <main className="flex-1 min-w-0 space-y-1">
-            <UploadStep    dasher={dasher} isActive={activeStep === 'upload'}    isExpanded={expandedSteps.has('upload')}    onToggle={() => toggleExpanded('upload')} />
-            <SemanticsStep dasher={dasher} isActive={activeStep === 'semantics'} isExpanded={expandedSteps.has('semantics')} onToggle={() => toggleExpanded('semantics')} />
-            <PlanStep      dasher={dasher} isActive={activeStep === 'plan'}      isExpanded={expandedSteps.has('plan')}      onToggle={() => toggleExpanded('plan')} />
-            <DashboardStep dasher={dasher} isActive={activeStep === 'dashboard'} isExpanded={expandedSteps.has('dashboard')} onToggle={() => toggleExpanded('dashboard')} />
-          </main>
-        </div>
+        {!dasher.datasetId ? (
+          <div className="max-w-5xl mx-auto px-8 py-16">
+            <LaunchCard dasher={dasher} onDone={handleLaunchDone} />
+          </div>
+        ) : (
+          <div className="max-w-5xl mx-auto px-8 py-10 flex gap-16">
+            <nav className="flex flex-col gap-6 pt-1 shrink-0 w-36">
+              {STEPS.map(step => {
+                const isDone   = status[step.key] === 'done'
+                const isActive = step.key === activeStep
+                const isLocked = !isDone && !isActive
+                return (
+                  <button
+                    key={step.key}
+                    disabled={!isDone}
+                    onClick={() => isDone && toggleExpanded(step.key)}
+                    title={isDone ? 'Click to expand / collapse' : undefined}
+                    className={`flex items-center gap-3 text-left transition-opacity duration-150 ${isDone ? 'cursor-pointer' : 'cursor-default'} ${isLocked ? 'opacity-40' : ''}`}
+                  >
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-mono text-xs transition-all duration-300 ${isDone ? 'bg-amber-400 text-neutral-950' : ''} ${isActive ? 'border-2 border-amber-400 text-amber-400' : ''} ${isLocked ? 'border border-neutral-300 dark:border-neutral-700 text-neutral-400' : ''}`}>
+                      {isDone ? '✓' : step.number}
+                    </div>
+                    <span className={`font-mono text-xs tracking-wider uppercase leading-tight ${isActive ? 'text-neutral-900 dark:text-neutral-100' : ''} ${isDone ? 'text-neutral-400 dark:text-neutral-500' : ''} ${isLocked ? 'text-neutral-300 dark:text-neutral-700' : ''}`}>
+                      {step.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </nav>
+            <main className="flex-1 min-w-0 space-y-1">
+              <UploadStep    dasher={dasher} isActive={activeStep === 'upload'}    isExpanded={expandedSteps.has('upload')}    onToggle={() => toggleExpanded('upload')} />
+              <SemanticsStep dasher={dasher} isActive={activeStep === 'semantics'} isExpanded={expandedSteps.has('semantics')} onToggle={() => toggleExpanded('semantics')} />
+              <PlanStep      dasher={dasher} isActive={activeStep === 'plan'}      isExpanded={expandedSteps.has('plan')}      onToggle={() => toggleExpanded('plan')} />
+              <DashboardStep dasher={dasher} isActive={activeStep === 'dashboard'} isExpanded={expandedSteps.has('dashboard')} onToggle={() => toggleExpanded('dashboard')} />
+            </main>
+          </div>
+        )}
+
       </div>
     </div>
   )
