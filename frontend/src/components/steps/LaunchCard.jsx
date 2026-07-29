@@ -50,7 +50,11 @@ export default function LaunchCard({ dasher, onDone }) {
 
     const hasFinish = result.some(e => e.type === 'finish')
     if (hasFinish) {
-      applyLaunchEvents(result, mode)
+      applyLaunchEvents(result, mode, {
+        name: name.trim() || null,
+        comment: comment.trim() || null,
+        original_filename: file.name,
+      })
       onDone()
     }
   }

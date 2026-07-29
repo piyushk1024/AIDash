@@ -5,8 +5,9 @@ from app.services.database import (
     get_dataset_metadata,
     get_cached_dashboard_plan,
     update_dashboard_plan,
-    get_dataset_owner
+    get_dataset_owner,
 )
+
 from app.services.profiler import profile_csv
 from app.services.nlChartBuilder import build_chart_from_prompt
 from app.services.cardBuilder import build_card_with_healing
@@ -87,7 +88,8 @@ async def add_nl_chart(
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
 
-    updated_plan = {**plan, "charts": plan["charts"] + [{**chart_spec, **result}]}
+    updated_charts = plan["charts"] + [{**chart_spec, **result}]
+    updated_plan = {**plan, "charts": updated_charts}
     await update_dashboard_plan(db, dataset_id, updated_plan)
 
     return result

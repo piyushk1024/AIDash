@@ -36,7 +36,19 @@ async def create_pool() -> asyncpg.Pool:
         init=_init_connection,
     )
 
-
+# ── list Datasets ─────────────────────────────────────────────────
+async def list_datasets_for_user(pool: asyncpg.Pool, user_id: str) -> list:
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT dataset_id, name, original_filename
+            FROM dataset_metadata
+            WHERE user_id = $1
+            ORDER BY created_at DESC
+            """,
+            user_id,
+        )
+    return [dict(row) for row in rows]
 # ── Semantics ─────────────────────────────────────────────────
 
 async def get_cached_semantics(pool: asyncpg.Pool, dataset_id: str):
@@ -198,7 +210,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         metadata = await conn.fetchrow(
             """
-            SELECT table_name, field_map, published, published_mode, name, comment
+            SELECT table_name, field_map, published, published_mode, name, comment, last_active_mode
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
@@ -383,6 +395,13 @@ async def set_published(pool: asyncpg.Pool, dataset_id: str, published: bool, mo
             WHERE dataset_id = $3
             """,
             published, mode, dataset_id,
+        )
+
+async def set_last_active_mode(pool: asyncpg.Pool, dataset_id: str, mode: str):
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE dataset_metadata SET last_active_mode = $1 WHERE dataset_id = $2",
+            mode, dataset_id,
         )
 
 # ── Profile ───────────────────────────────────────────────────

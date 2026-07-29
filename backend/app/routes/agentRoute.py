@@ -11,7 +11,9 @@ from app.services.database import (
     persist_dashboard_plan,
     update_dashboard_plan,
     persist_profile_json,
+    set_last_active_mode
 )
+
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
 from app.services.reportGenerator import generate_agent_report_pdf
@@ -128,6 +130,7 @@ async def run_agent_dashboard(
             await update_dashboard_plan(db, dataset_id, agent_plan)
         else:
             await persist_dashboard_plan(db, dataset_id, agent_plan)
+        await set_last_active_mode(db, dataset_id, "agent")
 
         return {
             "charts_built": result["charts_built"],
@@ -229,6 +232,7 @@ async def run_agent_dashboard_stream(
             await update_dashboard_plan(db, dataset_id, agent_plan)
         else:
             await persist_dashboard_plan(db, dataset_id, agent_plan)
+        await set_last_active_mode(db, dataset_id, "agent")
 
         try:
             async for event in stream_agent(

@@ -109,7 +109,7 @@ export function useDasher() {
   // FormData body; once the stream ends it hands the full collected
   // array + mode here. Mirrors rehydrate()'s end state so downstream
   // steps (semantics/plan/dashboard) read the same way post-launch.
-  function applyLaunchEvents(events, mode) {
+  function applyLaunchEvents(events, mode, launchMeta) {
     const createdEvent = events.find(e => e.type === "dataset_created");
     if (createdEvent) {
       setDatasetId(createdEvent.dataset_id);
@@ -117,8 +117,12 @@ export function useDasher() {
     }
 
     const profileDone = events.find(e => e.type === "step_done" && e.phase === "profile");
-    if (profileDone) {
-      setUploadResult(prev => ({ ...(prev ?? {}), profile: profileDone.profile }));
+    if (profileDone || launchMeta) {
+      setUploadResult(prev => ({
+        ...(prev ?? {}),
+        ...(launchMeta ?? {}),
+        profile: profileDone?.profile,
+      }));
     }
 
     const semanticsDone = events.find(e => e.type === "step_done" && e.phase === "semantics");
@@ -180,42 +184,50 @@ export function useDasher() {
 
   // ── Rehydrate from /state ───────────────────────────────────
   async function rehydrate(id) {
-    try {
-      const state = await api.getDatasetState(id);
-      const {
-        upload_result,
-        semantics: sem,
-        pipeline_plan,
-        agent_plan,
-        dashboard_result,
-        agent_result,
-      } = state;
+  try {
+    const state = await api.getDatasetState(id);
+    const {
+      upload_result,
+      semantics: sem,
+      pipeline_plan,
+      agent_plan,
+      dashboard_result,
+      agent_result,
+      last_active_mode,
+    } = state;
 
-      setDatasetId(id);
-      setUploadResult(upload_result);
-      setSemantics(sem);
-      setPipelinePlan(pipeline_plan);
-      setAgentPlan(agent_plan);
-      setPlan(pipeline_plan);
+    setDatasetId(id);
+    setUploadResult(upload_result);
+    setSemantics(sem);
+    setPipelinePlan(pipeline_plan);
+    setAgentPlan(agent_plan);
+    setPlan(pipeline_plan);
 
-      if (agent_result) {
-        setAgentResult(agent_result);
-        setDashboardResult(null);
-      } else {
-        setDashboardResult(dashboard_result);
-        setAgentResult(null);
-      }
+    // Prefer whichever mode was last actually worked on. Falls back to the
+    // old agent-first heuristic only if last_active_mode was never set
+    // (e.g. datasets created before this column existed).
+    const preferAgent = last_active_mode
+      ? last_active_mode === "agent"
+      : Boolean(agent_result);
 
-      setStatus({
-        upload:    upload_result ? "done" : "idle",
-        semantics: sem ? "done" : "idle",
-        plan:      pipeline_plan ? "done" : "idle",
-        dashboard: (agent_result || dashboard_result) ? "done" : "idle",
-      });
-    } catch (e) {
-      console.error("Rehydrate failed:", e.message);
+    if (preferAgent && agent_result) {
+      setAgentResult(agent_result);
+      setDashboardResult(null);
+    } else {
+      setDashboardResult(dashboard_result);
+      setAgentResult(null);
     }
-  }
+
+    setStatus({
+      upload:    upload_result ? "done" : "idle",
+      semantics: sem ? "done" : "idle",
+      plan:      pipeline_plan ? "done" : "idle",
+      dashboard: (agent_result || dashboard_result) ? "done" : "idle",
+    });
+      } catch (e) {
+        console.error("Rehydrate failed:", e.message);
+      }
+    }
 
   function reset() {
     setDatasetId(null);

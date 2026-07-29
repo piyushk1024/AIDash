@@ -37,6 +37,8 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
     upload_result = {
         "dataset_id": dataset_id,
         "original_filename": original_filename,
+        "name": metadata.get("name"),
+        "comment": metadata.get("comment"),
         "table_name": metadata["table_name"],
         "row_count": None,   # not stored — acceptable for rehydration
         "field_map": metadata["field_map"],
@@ -87,6 +89,7 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
         "agent_plan":       agent_plan,
         "dashboard_result": dashboard_result,
         "agent_result":     agent_result,
+        "last_active_mode": metadata.get("last_active_mode")
     }
 
 

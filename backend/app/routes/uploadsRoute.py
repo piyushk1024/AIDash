@@ -1,6 +1,6 @@
 import hashlib
 from pathlib import Path
-from uuid import uuid4, UUID
+from uuid import uuid4
 from app.config import settings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
@@ -10,6 +10,7 @@ from app.services.database import (
     get_dataset_by_checksum,
     delete_dataset,
     get_dataset_owner,
+    list_datasets_for_user
 )
 from app.dependencies import get_db, require_editor, get_current_user
 
@@ -124,28 +125,14 @@ async def list_datasets(
     db=Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    datasets = []
-
-    for file_path in UPLOAD_DIR.glob("*.csv"):
-        name = file_path.name
-        if "_" not in name:
-            continue
-        dataset_id, original_filename = name.split("_", 1)
-        try:
-            UUID(dataset_id)
-        except ValueError:
-            continue
-
-        owner = await get_dataset_owner(db, dataset_id)
-        if owner != current_user.user_id:
-            continue
-
-        datasets.append(
+    datasets = await list_datasets_for_user(db, current_user.user_id)
+    return {
+        "datasets": [
             {
-                "dataset_id": dataset_id,
-                "original_filename": original_filename,
-                "saved_filename": name,
+                "dataset_id": d["dataset_id"],
+                "original_filename": d["original_filename"],
+                "name": d["name"],
             }
-        )
-
-    return {"datasets": datasets}
+            for d in datasets
+        ]
+    }

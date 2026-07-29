@@ -8,8 +8,9 @@ from app.services.database import (
     is_plan_stale,
     get_dataset_metadata,
     get_dataset_owner,
-    persist_profile_json
+    persist_profile_json,    
 )
+
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
 from app.services.cardBuilder import build_card_with_healing
@@ -161,9 +162,10 @@ async def build_dashboard(
         # onto `chart` rather than `result` keeps the plan fields even
         # though cardBuilder's return value never carried them.
         built_charts.append({**chart, **result})
-    
+
     updated_plan = {**plan, "mode": "pipeline", "charts": built_charts, "errors": errors}
     await update_dashboard_plan(db, dataset_id, updated_plan)
+    # await set_last_active_mode(db, dataset_id, "pipeline")
 
     return {
         "cards_created": len(built_charts),
