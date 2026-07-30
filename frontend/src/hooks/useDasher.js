@@ -17,6 +17,8 @@ export function useDasher() {
   const [agentPlan, setAgentPlan] = useState(null);
   const [dashboardResult, setDashboardResult] = useState(null);
   const [agentResult, setAgentResult] = useState(null);
+  const [pipelineHint, setPipelineHint] = useState("");
+  const [activeMode, setActiveMode] = useState("pipeline");
 
   const [conflict, setConflict] = useState(null);
   const [status, setStatus] = useState(initialStatus);
@@ -66,6 +68,7 @@ export function useDasher() {
     try {
       const result = await api.inferSemantics(datasetId, businessHint);
       setSemantics(result);
+      setPipelineHint(businessHint || "");
       setStepStatus("semantics", "done");
     } catch (e) {
       setStepStatus("semantics", "error");
@@ -97,7 +100,7 @@ export function useDasher() {
     try {
       const result = await api.buildDashboard(datasetId);
       setDashboardResult(result);
-      setAgentResult(null);
+      setActiveMode("pipeline");
       setStepStatus("dashboard", "done");
     } catch (e) {
       setStepStatus("dashboard", "error");
@@ -152,7 +155,7 @@ export function useDasher() {
           cards_created: finishEvent.charts_built.length,
           errors: finishEvent.errors,
         });
-        setAgentResult(null);
+        setActiveMode("pipeline");
         setStepStatus("dashboard", "done");
       }
     } else {
@@ -165,7 +168,7 @@ export function useDasher() {
   // Component owns useEventStream and calls startStream itself;
   // once the stream ends it hands the full collected array here.
   // rationale event is pulled out explicitly, everything else is trace.
-  function applyAgentEvents(events, isNudge = false) {
+  function applyAgentEvents(events, isNudge = false, goal = null) {
     const finishEvent = events.find(e => e.type === "finish");
     const rationaleEvent = events.find(e => e.type === "rationale");
     const newTrace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
@@ -176,12 +179,15 @@ export function useDasher() {
       trace: isNudge ? [...(prev?.trace ?? []), ...newTrace] : newTrace,
       rationale: rationaleEvent?.text ?? (isNudge ? prev?.rationale ?? "" : ""),
       dashboard_title: rationaleEvent?.dashboard_title ?? (isNudge ? prev?.dashboard_title ?? "" : ""),
+      goal: goal ?? (isNudge ? prev?.goal ?? "" : ""),
     }));
 
-    setDashboardResult(null);
+    
+    setActiveMode("agent");
     setStepStatus("dashboard", "done");
   }
 
+  // ── Rehydrate from /state ───────────────────────────────────
   // ── Rehydrate from /state ───────────────────────────────────
   async function rehydrate(id) {
   try {
@@ -194,6 +200,7 @@ export function useDasher() {
       dashboard_result,
       agent_result,
       last_active_mode,
+      business_hint,
     } = state;
 
     setDatasetId(id);
@@ -202,21 +209,11 @@ export function useDasher() {
     setPipelinePlan(pipeline_plan);
     setAgentPlan(agent_plan);
     setPlan(pipeline_plan);
+    setPipelineHint(business_hint || "");
 
-    // Prefer whichever mode was last actually worked on. Falls back to the
-    // old agent-first heuristic only if last_active_mode was never set
-    // (e.g. datasets created before this column existed).
-    const preferAgent = last_active_mode
-      ? last_active_mode === "agent"
-      : Boolean(agent_result);
-
-    if (preferAgent && agent_result) {
-      setAgentResult(agent_result);
-      setDashboardResult(null);
-    } else {
-      setDashboardResult(dashboard_result);
-      setAgentResult(null);
-    }
+    setDashboardResult(dashboard_result);
+    setAgentResult(agent_result);
+    setActiveMode(last_active_mode === "agent" ? "agent" : "pipeline");
 
     setStatus({
       upload:    upload_result ? "done" : "idle",
@@ -238,6 +235,8 @@ export function useDasher() {
     setAgentPlan(null);
     setDashboardResult(null);
     setAgentResult(null);
+    setPipelineHint("");
+    setActiveMode("pipeline");
     setStatus(initialStatus);
     setErrors({});
   }
@@ -283,6 +282,7 @@ export function useDasher() {
     agentPlan,
     dashboardResult,
     agentResult,
+    pipelineHint,
     conflict,
     status,
     errors,
@@ -301,5 +301,6 @@ export function useDasher() {
     setDashboardPublished,
     setAgentResult,
     clearDashboardResult,
+    activeMode
   };
 }

@@ -220,7 +220,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
             return None
 
         semantics_row = await conn.fetchrow(
-            "SELECT semantics_json FROM dataset_semantics WHERE dataset_id = $1",
+            "SELECT semantics_json, business_hint  FROM dataset_semantics WHERE dataset_id = $1",
             dataset_id,
         )
 
@@ -245,6 +245,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
     return {
         "metadata":      dict(metadata),
         "semantics":     semantics_row["semantics_json"] if semantics_row else None,
+        "business_hint": semantics_row["business_hint"] if semantics_row else None,
         "pipeline_plan": pipeline_plan_row["plan_json"] if pipeline_plan_row else None,
         "agent_plan":    agent_plan_row["plan_json"] if agent_plan_row else None,
     }

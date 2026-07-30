@@ -6,6 +6,7 @@ from app.services.database import (
     get_cached_dashboard_plan,
     update_dashboard_plan,
     get_dataset_owner,
+    set_last_active_mode
 )
 
 from app.services.profiler import profile_csv
@@ -91,6 +92,7 @@ async def add_nl_chart(
     updated_charts = plan["charts"] + [{**chart_spec, **result}]
     updated_plan = {**plan, "charts": updated_charts}
     await update_dashboard_plan(db, dataset_id, updated_plan)
+    await set_last_active_mode(db, dataset_id, body.mode)
 
     return result
 
@@ -134,6 +136,7 @@ async def edit_nl_chart(
     ]
     updated_plan = {**plan, "charts": updated_charts}
     await update_dashboard_plan(db, dataset_id, updated_plan)
+    await set_last_active_mode(db, dataset_id, body.mode)
 
     return result
 
@@ -151,5 +154,6 @@ async def delete_nl_chart(
     updated_charts = [c for c in plan["charts"] if c.get("card_id") != card_id]
     updated_plan = {**plan, "charts": updated_charts}
     await update_dashboard_plan(db, dataset_id, updated_plan)
+    await set_last_active_mode(db, dataset_id, mode)
 
     return {"deleted": card_id}

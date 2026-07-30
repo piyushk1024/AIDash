@@ -6,17 +6,30 @@ import { api } from '../../lib/api'
 const fieldLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted"
 const fieldInput = "w-full bg-surface border border-muted rounded-control px-3 py-2.5 font-mono text-[13px] text-fg placeholder-muted/60 focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
 
-export default function LaunchCard({ dasher, onDone }) {
-  const { applyLaunchEvents } = dasher
+// rebuildContext (optional): { name, comment, hint, mode }
+// When present: dropzone/name/comment are disabled (no re-upload), mode +
+// hint stay editable, and submitting re-infers/rebuilds on the existing
+// dataset instead of launching a new one.
+export default function LaunchCard({ dasher, onDone, rebuildContext }) {
+  const { applyLaunchEvents, applyAgentEvents, inferSemantics, generatePlan, createDashboard, datasetId, agentResult } = dasher
+  const isRebuild = Boolean(rebuildContext)
 
   const [file, setFile] = useState(null)
   const [dragging, setDragging] = useState(false)
-  const [name, setName] = useState('')
-  const [comment, setComment] = useState('')
-  const [mode, setMode] = useState('pipeline')
-  const [hint, setHint] = useState('')
+  const [name, setName] = useState(rebuildContext?.name ?? '')
+  const [comment, setComment] = useState(rebuildContext?.comment ?? '')
+  const [mode, setMode] = useState(rebuildContext?.mode ?? 'pipeline')
+  // const [hint, setHint] = useState(rebuildContext?.hint ?? '')
+  const [pipelineHint, setPipelineHint] = useState(rebuildContext?.pipelineHint ?? '')
+  const [agentGoal, setAgentGoal] = useState(rebuildContext?.agentGoal ?? '')
+  const hint = mode === 'pipeline' ? pipelineHint : agentGoal
+  const setHint = mode === 'pipeline' ? setPipelineHint : setAgentGoal
+
+  
+
   const [localError, setLocalError] = useState(null)
   const [showProcessing, setShowProcessing] = useState(false)
+  const [rebuilding, setRebuilding] = useState(false) // pipeline rebuild: no SSE, simple busy state
   const inputRef = useRef(null)
 
   const { events, streaming, streamError, startStream, reset } = useEventStream()
@@ -24,16 +37,18 @@ export default function LaunchCard({ dasher, onDone }) {
   function handleDrop(e) {
     e.preventDefault()
     setDragging(false)
+    if (isRebuild) return
     const dropped = e.dataTransfer.files[0]
     if (dropped?.name.endsWith('.csv')) setFile(dropped)
   }
 
   function handleFileChange(e) {
+    if (isRebuild) return
     const picked = e.target.files[0]
     if (picked) setFile(picked)
   }
 
-  async function handleLaunch() {
+  async function handleFreshLaunch() {
     if (!file) return
     setLocalError(null)
     reset()
@@ -59,6 +74,46 @@ export default function LaunchCard({ dasher, onDone }) {
     }
   }
 
+  async function handlePipelineRebuild() {
+    setLocalError(null)
+    setRebuilding(true)
+    try {
+      await inferSemantics(pipelineHint.trim() || null, true)
+      await generatePlan()
+      await createDashboard()
+      onDone()
+    } catch (e) {
+      setLocalError(e.message)
+    } finally {
+      setRebuilding(false)
+    }
+  }
+
+  async function handleAgentRebuild() {
+    setLocalError(null)
+    reset()
+    setShowProcessing(true)
+    const isAgentMode = Boolean(agentResult)
+    const submittedGoal = agentGoal.trim()
+    const result = await startStream(
+      api.agentStreamUrl(datasetId),
+      { ...(submittedGoal ? { goal: submittedGoal } : {}), nudge: isAgentMode }
+    )
+    const errorEvent = result.find(e => e.type === 'phase_error')
+    if (!errorEvent) {
+      applyAgentEvents(result, isAgentMode, submittedGoal || null)
+      onDone()
+    }
+    // on error, ProcessingView shows its own terminal state; dismiss handlers
+    // below just return to this form so the hint can be edited and retried
+  }
+
+  function handleLaunch() {
+    if (!isRebuild) return handleFreshLaunch()
+    if (mode === 'pipeline') return handlePipelineRebuild()
+    return handleAgentRebuild()
+  }
+
   function handleCancel() {
     setShowProcessing(false)
     reset()
@@ -71,7 +126,7 @@ export default function LaunchCard({ dasher, onDone }) {
 
   function handleUploadDifferent() {
     setShowProcessing(false)
-    setFile(null)
+    if (!isRebuild) setFile(null)
     reset()
   }
 
@@ -90,26 +145,36 @@ export default function LaunchCard({ dasher, onDone }) {
     )
   }
 
+  const canSubmit = isRebuild ? !rebuilding : Boolean(file)
+
   return (
     <div className="animate-fade-in max-w-xl w-full mx-auto bg-surface border border-muted rounded-card p-7">
-      <h1 className="font-display font-semibold text-[15px] text-fg mb-1">Launch Dashboard</h1>
+      <h1 className="font-display font-semibold text-[15px] text-fg mb-1">
+        {isRebuild ? 'Rebuild Dashboard' : 'Launch Dashboard'}
+      </h1>
       <p className="font-mono text-[12px] text-muted leading-relaxed mb-6">
-        Upload a CSV — Dasher profiles it, infers semantics, and builds the dashboard in one run.
+        {isRebuild
+          ? 'Adjust build mode or steering hint, then rebuild on this dataset.'
+          : 'Upload a CSV — Dasher profiles it, infers semantics, and builds the dashboard in one run.'}
       </p>
 
       <div
-        onClick={() => inputRef.current?.click()}
-        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onClick={() => !isRebuild && inputRef.current?.click()}
+        onDragOver={e => { e.preventDefault(); if (!isRebuild) setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={handleDrop}
-        className={`relative cursor-pointer rounded-card border border-dashed px-8 py-10 flex flex-col items-center justify-center gap-2 transition-colors duration-150 ${dragging ? 'border-accent bg-accent-wash-soft' : 'border-muted bg-bg hover:border-accent/50'}`}
+        className={`relative rounded-card border border-dashed px-8 py-10 flex flex-col items-center justify-center gap-2 transition-colors duration-150 ${
+          isRebuild
+            ? 'border-muted bg-bg opacity-50 cursor-not-allowed'
+            : dragging ? 'border-accent bg-accent-wash-soft cursor-pointer' : 'border-muted bg-bg hover:border-accent/50 cursor-pointer'
+        }`}
       >
-        <input ref={inputRef} type="file" accept=".csv" onChange={handleFileChange} className="hidden" />
+        <input ref={inputRef} type="file" accept=".csv" onChange={handleFileChange} disabled={isRebuild} className="hidden" />
         <div className="text-2xl text-muted">↑</div>
         <div className="font-mono text-[12px] tracking-wide text-fg">
-          {file ? file.name : 'Drop CSV here or click to browse'}
+          {isRebuild ? (rebuildContext.name || rebuildContext.comment ? 'Existing dataset' : 'Existing dataset') : (file ? file.name : 'Drop CSV here or click to browse')}
         </div>
-        {file && (
+        {!isRebuild && file && (
           <div className="font-mono text-[11px] text-muted">
             {(file.size / 1024).toFixed(1)} KB
           </div>
@@ -124,6 +189,7 @@ export default function LaunchCard({ dasher, onDone }) {
             value={name}
             onChange={e => setName(e.target.value)}
             placeholder="Dashboard name"
+            disabled={isRebuild}
             className={fieldInput}
           />
         </div>
@@ -134,6 +200,7 @@ export default function LaunchCard({ dasher, onDone }) {
             value={comment}
             onChange={e => setComment(e.target.value)}
             placeholder="Notes about this dataset"
+            disabled={isRebuild}
             className={fieldInput}
           />
         </div>
@@ -184,10 +251,10 @@ export default function LaunchCard({ dasher, onDone }) {
       <div className="mt-6">
         <button
           onClick={handleLaunch}
-          disabled={!file}
+          disabled={!canSubmit}
           className="px-6 py-2.5 rounded-control font-display text-[12.5px] font-semibold uppercase tracking-wide transition-opacity duration-150 disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
         >
-          Launch Dashboard →
+          {isRebuild ? (rebuilding ? 'Rebuilding…' : 'Rebuild Dashboard') : 'Launch Dashboard →'}
         </button>
       </div>
     </div>

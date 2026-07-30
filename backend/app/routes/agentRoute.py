@@ -70,6 +70,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     existing_trace = []
     existing_rationale = ""
     existing_dashboard_title = ""
+    cache_hit = False
     if nudge:
         existing_plan = await get_cached_dashboard_plan(db, dataset_id, mode="agent")
         if not existing_plan or not existing_plan.get("charts"):
@@ -81,6 +82,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
         existing_trace = existing_plan.get("trace", [])
         existing_rationale = existing_plan.get("rationale", "")
         existing_dashboard_title = existing_plan.get("dashboard_title", "")
+        cache_hit = existing_plan.get("goal") == goal
 
     return {
         "semantics": semantics,
@@ -91,6 +93,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
         "existing_trace": existing_trace,
         "existing_rationale": existing_rationale,
         "existing_dashboard_title": existing_dashboard_title,
+        "cache_hit": cache_hit
     }
 
 
@@ -103,6 +106,17 @@ async def run_agent_dashboard(
 ):
     try:
         setup = await _setup_agent_run(dataset_id, db, current_user, body.goal, body.nudge)
+
+        if setup["cache_hit"]:
+            # Goal unchanged since the last nudge — nothing to build, skip
+            # the LLM call and return the existing agent dashboard as-is.
+            return {
+                "charts_built": setup["existing_charts"],
+                "trace": setup["existing_trace"],
+                "rationale": setup["existing_rationale"],
+                "dashboard_title": setup["existing_dashboard_title"],
+                "cached": True,
+            }
 
         result = await run_agent(
             goal=setup["goal"],
@@ -210,6 +224,21 @@ async def run_agent_dashboard_stream(
     setup = await _setup_agent_run(dataset_id, db, current_user, body.goal, body.nudge)
 
     async def event_generator():
+        if setup["cache_hit"]:
+            # Goal unchanged since the last nudge — skip the LLM call and
+            # just replay the existing result as a rationale + finish pair,
+            # which is all applyAgentEvents/ProcessingView need to settle.
+            yield _sse_format({
+                "type": "rationale",
+                "text": setup["existing_rationale"],
+                "dashboard_title": setup["existing_dashboard_title"],
+            })
+            yield _sse_format({
+                "type": "finish",
+                "reasoning": "No changes — goal matches the last run, reused the cached dashboard.",
+                "charts_built": setup["existing_charts"],
+            })
+            return
         # Seed from existing state on a nudge, so a disconnect right after
         # starting still leaves the true current state recoverable, not an
         # empty dashboard.

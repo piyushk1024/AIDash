@@ -3,45 +3,42 @@ import ChartGrid from '../dashboard/ChartGrid'
 import InsightsPanel from './InsightsPanel'
 import AgentTrace from './AgentTrace'
 import HealingSummary from './HealingSummary'
+import LaunchCard from './LaunchCard'
 import { api } from '../../lib/api'
 
 const sectionLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted mb-2"
+
+const PIPELINE_STEPS = [
+  { key: 'upload', label: 'PROFILE' },
+  { key: 'semantics', label: 'SEMANTICS' },
+  { key: 'plan', label: 'PLAN' },
+  { key: 'dashboard', label: 'BUILD' },
+]
+
+const AGENT_STEPS = [
+  { key: 'upload', label: 'PROFILE' },
+  { key: 'semantics', label: 'SEMANTICS' },
+  { key: 'dashboard', label: 'AGENT RUN' },
+]
 
 export default function Workspace({ dasher }) {
   const {
     datasetId, uploadResult, status,
     dashboardResult, agentResult, setAgentResult,
     addCard, replaceCard, removeCard, setDashboardPublished,
-    inferSemantics, generatePlan, createDashboard,
+    pipelineHint, activeMode,
   } = dasher
 
-  const isAgentMode = Boolean(agentResult)
-  const active = agentResult ?? dashboardResult
-  const cards = isAgentMode ? agentResult.charts_built : (dashboardResult?.cards ?? [])
+  const isAgentMode = activeMode === 'agent'
+  const active = isAgentMode ? agentResult : dashboardResult
+  const cards = isAgentMode ? (agentResult?.charts_built ?? []) : (dashboardResult?.cards ?? [])
   const fieldMap = uploadResult?.field_map ?? {}
   const published = active?.published ?? false
 
   const [activeTab, setActiveTab] = useState('dashboard') // 'dashboard' | 'insights'
-  const [hint, setHint] = useState('')
-  const [reinferring, setReinferring] = useState(false)
-  const [reinferError, setReinferError] = useState(null)
+  const [showRebuild, setShowRebuild] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [copied, setCopied] = useState(false)
-
-  async function handleReinfer() {
-    if (isAgentMode) return // agent-mode re-infer not wired to any route yet
-    setReinferring(true)
-    setReinferError(null)
-    try {
-      await inferSemantics(hint.trim() || null, true)
-      await generatePlan()
-      await createDashboard()
-    } catch (e) {
-      setReinferError(e.message)
-    } finally {
-      setReinferring(false)
-    }
-  }
 
   async function handlePublishToggle() {
     setPublishing(true)
@@ -67,12 +64,16 @@ export default function Workspace({ dasher }) {
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const pipelineSteps = [
-    { key: 'upload', label: 'PROFILE' },
-    { key: 'semantics', label: 'SEMANTICS' },
-    { key: 'plan', label: 'PLAN' },
-    { key: 'dashboard', label: 'BUILD' },
-  ]
+  const pipelineSteps = isAgentMode ? AGENT_STEPS : PIPELINE_STEPS
+  const datasetLabel = uploadResult?.name || uploadResult?.original_filename || 'Untitled dataset'
+
+  const rebuildContext = {
+    name: uploadResult?.name ?? '',
+    comment: uploadResult?.comment ?? '',
+    pipelineHint: pipelineHint ?? '',
+    agentGoal: agentResult?.goal ?? '',
+    mode: isAgentMode ? 'agent' : 'pipeline',
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-8 py-10 flex gap-10">
@@ -80,8 +81,13 @@ export default function Workspace({ dasher }) {
 
         <div>
           <div className={sectionLabel}>Active Dataset</div>
-          <div className="font-mono text-[13px] text-fg truncate mb-2">
-            {uploadResult?.name || uploadResult?.original_filename || 'Untitled dataset'}
+          <div className="flex items-center gap-2 mb-2">
+            <div className="font-mono text-[13px] text-fg truncate">
+              {datasetLabel}
+            </div>
+            <span className="font-mono text-[9.5px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-icon border border-muted text-muted shrink-0">
+              {isAgentMode ? 'Agent' : 'Pipeline'}
+            </span>
           </div>
           <div className="font-mono text-[10px] text-muted mb-2">
             {datasetId?.slice(0, 8)}
@@ -105,25 +111,13 @@ export default function Workspace({ dasher }) {
 
         <div>
           <div className={sectionLabel}>Steering Hint</div>
-          <textarea
-            value={hint}
-            onChange={e => setHint(e.target.value)}
-            placeholder="e.g. focus on regional revenue trends and flag anomalies"
-            rows={3}
-            disabled={isAgentMode}
-            className="w-full bg-bg border border-muted rounded-control px-2.5 py-2 font-mono text-[11.5px] text-fg placeholder-muted/60 focus:outline-none focus:border-accent transition-colors resize-none disabled:opacity-50"
-          />
           <button
-            onClick={handleReinfer}
-            disabled={reinferring || isAgentMode}
-            title={isAgentMode ? 'Re-infer not available in agent mode yet' : undefined}
-            className="mt-2 w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
+            onClick={() => setShowRebuild(true)}
+            disabled={showRebuild}
+            className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
           >
-            {reinferring ? 'Re-inferring…' : 'Re-infer Plan'}
+            Re-infer Plan
           </button>
-          {reinferError && (
-            <div className="mt-1.5 font-mono text-[11px] text-danger">✕ {reinferError}</div>
-          )}
         </div>
 
         <div>
@@ -175,38 +169,46 @@ export default function Workspace({ dasher }) {
 
       <main className="flex-1 min-w-0">
         {activeTab === 'dashboard' ? (
-          <div className="space-y-5">
-            {isAgentMode && agentResult.dashboard_title && (
-              <h2 className="font-display font-semibold text-lg text-fg">{agentResult.dashboard_title}</h2>
-            )}
-            {isAgentMode && agentResult.rationale && (
-              <p className="font-mono text-[12px] text-muted leading-relaxed">{agentResult.rationale}</p>
-            )}
-
-            <ChartGrid
-              cards={cards}
-              datasetId={datasetId}
-              fieldMap={fieldMap}
-              mode={isAgentMode ? 'agent' : 'pipeline'}
-              onCardAdded={card => isAgentMode
-                ? setAgentResult(prev => ({ ...prev, charts_built: [...prev.charts_built, card] }))
-                : addCard(card)}
-              onCardEdited={(cardId, card) => isAgentMode
-                ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.map(c => c.card_id === cardId ? card : c) }))
-                : replaceCard(cardId, card)}
-              onCardDeleted={cardId => isAgentMode
-                ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.filter(c => c.card_id !== cardId) }))
-                : removeCard(cardId)}
+          showRebuild ? (
+            <LaunchCard
+              dasher={dasher}
+              rebuildContext={rebuildContext}
+              onDone={() => setShowRebuild(false)}
             />
+          ) : (
+            <div className="space-y-5">
+              {isAgentMode && agentResult?.dashboard_title && (
+                <h2 className="font-display font-semibold text-lg text-fg">{agentResult.dashboard_title}</h2>
+              )}
+              {isAgentMode && agentResult?.rationale && (
+                <p className="font-mono text-[12px] text-muted leading-relaxed">{agentResult.rationale}</p>
+              )}
 
-            {isAgentMode && agentResult.trace?.length > 0 && (
-              <AgentTrace trace={agentResult.trace} />
-            )}
+              <ChartGrid
+                cards={cards}
+                datasetId={datasetId}
+                fieldMap={fieldMap}
+                mode={isAgentMode ? 'agent' : 'pipeline'}
+                onCardAdded={card => isAgentMode
+                  ? setAgentResult(prev => ({ ...prev, charts_built: [...prev.charts_built, card] }))
+                  : addCard(card)}
+                onCardEdited={(cardId, card) => isAgentMode
+                  ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.map(c => c.card_id === cardId ? card : c) }))
+                  : replaceCard(cardId, card)}
+                onCardDeleted={cardId => isAgentMode
+                  ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.filter(c => c.card_id !== cardId) }))
+                  : removeCard(cardId)}
+              />
 
-            {!isAgentMode && (dashboardResult?.cards?.some(c => c.healed) || dashboardResult?.errors?.length > 0) && (
-              <HealingSummary cards={dashboardResult.cards} errors={dashboardResult.errors} />
-            )}
-          </div>
+              {isAgentMode && agentResult?.trace?.length > 0 && (
+                <AgentTrace trace={agentResult.trace} />
+              )}
+
+              {!isAgentMode && (dashboardResult?.cards?.some(c => c.healed) || dashboardResult?.errors?.length > 0) && (
+                <HealingSummary cards={dashboardResult.cards} errors={dashboardResult.errors} />
+              )}
+            </div>
+          )
         ) : (
           <InsightsPanel datasetId={datasetId} />
         )}
