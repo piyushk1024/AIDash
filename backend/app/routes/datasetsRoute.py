@@ -9,7 +9,7 @@ from app.services.database import (
     get_published_dashboard,
     set_published,
     get_published_snapshot,
-    save_published_snapshot,
+    save_published_snapshot,    
 )
 
 from app.config import settings
@@ -51,10 +51,13 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
     pipeline_plan = state["pipeline_plan"]
     agent_plan = state["agent_plan"]
 
+    stale_by_mode = state.get("stale_by_mode", {})
+
     dashboard_result = None
     if pipeline_plan and pipeline_plan.get("charts"):
         dashboard_result = {
             "published":     metadata.get("published", False) and metadata.get("published_mode") == "pipeline",
+            "stale":         stale_by_mode.get("pipeline", False),
             "cards_created": len(pipeline_plan.get("charts", [])),
             "cards": [
                 {
@@ -76,6 +79,7 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
     if agent_plan and agent_plan.get("charts"):
         agent_result = {
             "published":    metadata.get("published", False) and metadata.get("published_mode") == "agent",
+            "stale":        stale_by_mode.get("agent", False),
             "charts_built": agent_plan.get("charts", []),
             "trace":        agent_plan.get("trace", []),
             "rationale":    agent_plan.get("rationale", ""),
@@ -152,13 +156,18 @@ async def get_public_dashboard(dataset_id: str, db=Depends(get_db)):
     if not row or not row["published"] or not row["published_mode"]:
         raise HTTPException(status_code=404, detail="Dashboard not available")
 
-    snapshot = await get_published_snapshot(db, dataset_id, row["published_mode"])
-    if not snapshot:
+    snapshot_row  = await get_published_snapshot(db, dataset_id, row["published_mode"])
+    if not snapshot_row:
         raise HTTPException(status_code=404, detail="Dashboard not available")
+
+    snapshot = snapshot_row["snapshot_json"]
 
     return {
         "mode": row["published_mode"],
+        "dataset_name": row.get("name"),
+        "published_at": snapshot_row["published_at"],
         "charts": snapshot.get("charts", []),
         "rationale": snapshot.get("rationale"),
         "dashboard_title": snapshot.get("dashboard_title"),
     }
+

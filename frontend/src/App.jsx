@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, Navigate } from 'react-router'
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router'
 import { useAuth } from './hooks/useAuth'
 import { useDasher } from './hooks/useDasher'
 import { api } from './lib/api'
@@ -7,8 +7,9 @@ import AuthPage from './components/AuthPage'
 import SharePage from './components/sharepage'
 import LaunchCard from './components/steps/LaunchCard'
 import Workspace from './components/steps/Workspace'
+import { useTheme } from './hooks/useTheme'
 
-function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
+function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   return (
     <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
       <div className="flex items-center gap-3">
@@ -18,7 +19,7 @@ function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
         </span>
       </div>
       <div className="flex items-center gap-4">
-        {phase === 'workspace' && (
+        {showHome && (
           <button
             onClick={onGoHome}
             className="flex items-center gap-1.5 font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase group"
@@ -36,13 +37,29 @@ function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
         >
           Sign out
         </button>
-        <button
+        {/* <button
           onClick={() => onToggleDark()}
           className="w-8 h-8 flex items-center justify-center rounded-icon border border-muted hover:border-accent transition-colors"
           title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
           <span className="text-muted text-xs">{dark ? '☀' : '☾'}</span>
-        </button>
+        </button> */}
+        <div
+          onClick={onToggleDark}
+          className="flex items-center gap-2.5 cursor-pointer select-none"
+        >
+          <span className={`font-mono text-[11px] font-medium tracking-wide transition-opacity ${dark ? 'opacity-40' : 'opacity-100'} text-muted`}>
+            LIGHT
+          </span>
+          <div className="w-10 h-[22px] rounded-full border border-muted bg-bg relative box-border">
+            <div
+              className={`w-4 h-4 rounded-full bg-accent absolute top-[2px] transition-all duration-150 ${dark ? 'left-[21px]' : 'left-[2px]'}`}
+            />
+          </div>
+          <span className={`font-mono text-[11px] font-medium tracking-wide transition-opacity ${dark ? 'opacity-100' : 'opacity-40'} text-muted`}>
+            DARK
+          </span>
+        </div>
       </div>
     </header>
   )
@@ -53,20 +70,31 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<AuthPage />} />
       <Route path="/share/:datasetId" element={<SharePage />} />
-      <Route path="/*"     element={<DasherApp />} />
+      <Route path="/" element={<DasherApp />} />
+      <Route path="/launch" element={<DasherApp />} />
+      <Route path="/d/:datasetId" element={<DasherApp />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
 }
 
 function DasherApp() {
   const auth = useAuth()
-  const [dark, setDark] = useState(true)
-  const [phase, setPhase] = useState('pick') // 'pick' | 'workspace'
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { datasetId: routeDatasetId } = useParams()
+  const [dark, setDark] = useTheme()
   const [datasets, setDatasets] = useState([])
   const [picking, setPicking] = useState(true)
-
+  // const [hydrating, setHydrating] = useState(false)
+  
   const dasher = useDasher()
   const { rehydrate } = dasher
+
+  const hydrating = Boolean(routeDatasetId) && auth.isAuthenticated && dasher.datasetId !== routeDatasetId
+
+  const isLaunchRoute = location.pathname === '/launch'
+  const isWorkspaceRoute = Boolean(routeDatasetId)
 
   useEffect(() => {
     if (!auth.isAuthenticated) return
@@ -76,19 +104,27 @@ function DasherApp() {
       .finally(() => setPicking(false))
   }, [auth.isAuthenticated])
 
-  // Redirect to login if not authenticated — also fires after logout
+  // Rehydrate whenever the route names a dataset the client doesn't already
+  // have loaded — covers a hard refresh on /d/:id, and direct navigation
+  // (e.g. a bookmarked link). Redirects home if the id turns out to be bad.
+  useEffect(() => {
+    if (!auth.isAuthenticated || !routeDatasetId) return
+    if (dasher.datasetId === routeDatasetId) return
+    // rehydrate(routeDatasetId).
+    rehydrate(routeDatasetId).then(ok => {      
+      if (!ok) navigate('/', { replace: true })
+    })
+  }, [auth.isAuthenticated, routeDatasetId])
+
   if (!auth.isAuthenticated) return <Navigate to="/login" replace />
 
-  async function handlePickDataset(datasetId) {
-    setPicking(true)
-    await rehydrate(datasetId)
-    setPicking(false)
-    setPhase('workspace')
+  function handlePickDataset(datasetId) {
+    navigate(`/d/${datasetId}`)
   }
 
   function handleStartFresh() {
     dasher.reset()
-    setPhase('workspace')
+    navigate('/launch')
   }
 
   async function handleDeleteDataset(datasetId) {
@@ -101,20 +137,23 @@ function DasherApp() {
       .then(res => setDatasets(res.datasets ?? []))
       .catch(() => {})
     dasher.reset()
-    setPhase('pick')
+    navigate('/')
   }
 
-  async function handleLaunchDone() {
+  async function handleLaunchDone(datasetId) {
     const res = await api.listDatasets().catch(() => null)
     if (res) setDatasets(res.datasets ?? [])
+    if (datasetId) navigate(`/d/${datasetId}`)
   }
 
-  if (phase === 'pick') {
+  const showHome = isLaunchRoute || isWorkspaceRoute
+
+  if (!isLaunchRoute && !isWorkspaceRoute) {
     return (
       <div className={dark ? 'dark' : ''}>
         <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
           <Header
-            phase={phase}
+            showHome={showHome}
             onGoHome={handleGoHome}
             user={auth.user}
             onLogout={auth.logout}
@@ -171,19 +210,25 @@ function DasherApp() {
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
         <Header
-          phase={phase}
+          showHome={showHome}
           onGoHome={handleGoHome}
           user={auth.user}
           onLogout={auth.logout}
           dark={dark}
           onToggleDark={() => setDark(d => !d)}
         />
-        {!dasher.datasetId ? (
+        {isWorkspaceRoute ? (
+          hydrating ? (
+            <div className="max-w-xl mx-auto px-8 py-16">
+              <p className="font-mono text-xs text-muted animate-pulse">Loading dashboard...</p>
+            </div>
+          ) : (
+            <Workspace dasher={dasher} />
+          )
+        ) : (
           <div className="max-w-5xl mx-auto px-8 py-16">
             <LaunchCard dasher={dasher} onDone={handleLaunchDone} />
           </div>
-        ) : (
-          <Workspace dasher={dasher} />
         )}
       </div>
     </div>

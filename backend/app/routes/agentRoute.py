@@ -110,6 +110,7 @@ async def run_agent_dashboard(
         if setup["cache_hit"]:
             # Goal unchanged since the last nudge — nothing to build, skip
             # the LLM call and return the existing agent dashboard as-is.
+            await set_last_active_mode(db, dataset_id, "agent")
             return {
                 "charts_built": setup["existing_charts"],
                 "trace": setup["existing_trace"],
@@ -228,6 +229,7 @@ async def run_agent_dashboard_stream(
             # Goal unchanged since the last nudge — skip the LLM call and
             # just replay the existing result as a rationale + finish pair,
             # which is all applyAgentEvents/ProcessingView need to settle.
+            await set_last_active_mode(db, dataset_id, "agent")
             yield _sse_format({
                 "type": "rationale",
                 "text": setup["existing_rationale"],

@@ -65,6 +65,11 @@ export function useDasher() {
     if (!datasetId) return;
     setStepStatus("semantics", "loading");
     setStepError("semantics", null);
+    // Downstream steps are stale the moment semantics change — clear them
+    // so the sidebar doesn't show a rebuild's leftover "done" from before
+    // this round has actually re-run those steps.
+    setStepStatus("plan", "idle");
+    setStepStatus("dashboard", "idle");
     try {
       const result = await api.inferSemantics(datasetId, businessHint);
       setSemantics(result);
@@ -81,6 +86,7 @@ export function useDasher() {
     if (!datasetId) return;
     setStepStatus("plan", "loading");
     setStepError("plan", null);
+    setStepStatus("dashboard", "idle");
     try {
       const result = await api.generatePlan(datasetId);
       setPlan(result);
@@ -102,6 +108,7 @@ export function useDasher() {
       setDashboardResult(result);
       setActiveMode("pipeline");
       setStepStatus("dashboard", "done");
+      await rehydrate(datasetId); // reconciles published/stale from the authoritative backend state
     } catch (e) {
       setStepStatus("dashboard", "error");
       setStepError("dashboard", e.message);
@@ -159,7 +166,7 @@ export function useDasher() {
         setStepStatus("dashboard", "done");
       }
     } else {
-      applyAgentEvents(events, false);
+      applyAgentEvents(events, false, null, createdEvent?.dataset_id);
     }
   }
 
@@ -168,7 +175,8 @@ export function useDasher() {
   // Component owns useEventStream and calls startStream itself;
   // once the stream ends it hands the full collected array here.
   // rationale event is pulled out explicitly, everything else is trace.
-  function applyAgentEvents(events, isNudge = false, goal = null) {
+  function applyAgentEvents(events, isNudge = false, goal = null, idOverride = null) {
+    const id = idOverride ?? datasetId;
     const finishEvent = events.find(e => e.type === "finish");
     const rationaleEvent = events.find(e => e.type === "rationale");
     const newTrace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
@@ -185,9 +193,9 @@ export function useDasher() {
     
     setActiveMode("agent");
     setStepStatus("dashboard", "done");
+    rehydrate(id); // reconciles published/stale from the authoritative backend state
   }
 
-  // ── Rehydrate from /state ───────────────────────────────────
   // ── Rehydrate from /state ───────────────────────────────────
   async function rehydrate(id) {
   try {
@@ -221,8 +229,10 @@ export function useDasher() {
       plan:      pipeline_plan ? "done" : "idle",
       dashboard: (agent_result || dashboard_result) ? "done" : "idle",
     });
+    return true;
       } catch (e) {
         console.error("Rehydrate failed:", e.message);
+        return false;
       }
     }
 
@@ -248,6 +258,7 @@ export function useDasher() {
       cards: [...(prev.cards ?? []), card],
       cards_created: (prev.cards_created ?? 0) + 1,
     }));
+    rehydrate(datasetId);
   }
 
   function replaceCard(cardId, card) {
@@ -255,6 +266,7 @@ export function useDasher() {
       ...prev,
       cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
     }));
+    rehydrate(datasetId);
   }
 
   function removeCard(cardId) {
@@ -263,6 +275,7 @@ export function useDasher() {
       cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
       cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
     }));
+    rehydrate(datasetId);
   }
 
   function setDashboardPublished(value) {

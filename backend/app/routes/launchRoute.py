@@ -21,6 +21,7 @@ from app.services.database import (
     persist_semantics,
     persist_dashboard_plan,
     update_dashboard_plan,
+    set_last_active_mode,
     json_default,
 )
 
@@ -106,6 +107,7 @@ async def launch_dataset_stream(
                         await persist_dashboard_plan(db, dataset_id, event["plan"])
                     elif event["type"] == "finish":
                         await update_dashboard_plan(db, dataset_id, event["plan"], mode="pipeline")
+                        await set_last_active_mode(db, dataset_id, "pipeline")
 
                     yield _sse_format(event)
 
@@ -133,6 +135,7 @@ async def launch_dataset_stream(
                     "dashboard_title": "",
                 }
                 await persist_dashboard_plan(db, dataset_id, agent_plan)
+                await set_last_active_mode(db, dataset_id, "agent")
 
                 yield _sse_format({"type": "step_started", "phase": "build"})
 

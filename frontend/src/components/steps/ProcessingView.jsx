@@ -207,6 +207,8 @@ export default function ProcessingView({ mode, events, streaming, streamError, d
             <span className="font-mono text-[11.5px] text-muted pt-4">{footerNote}</span>
             <button
               onClick={onCancel}
+              disabled={mode === 'agent' && events.length > 0}
+              title={mode === 'agent' && events.length > 0 ? "Agentic flow initiated" : undefined}
               className="mt-4 px-4 py-2.5 rounded-control font-display font-semibold text-xs text-danger border border-danger"
             >
               CANCEL

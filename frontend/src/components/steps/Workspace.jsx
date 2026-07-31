@@ -25,7 +25,7 @@ export default function Workspace({ dasher }) {
   const {
     datasetId, uploadResult, status,
     dashboardResult, agentResult, setAgentResult,
-    addCard, replaceCard, removeCard, setDashboardPublished,
+    addCard, replaceCard, removeCard, //setDashboardPublished,
     pipelineHint, activeMode,
   } = dasher
 
@@ -34,22 +34,20 @@ export default function Workspace({ dasher }) {
   const cards = isAgentMode ? (agentResult?.charts_built ?? []) : (dashboardResult?.cards ?? [])
   const fieldMap = uploadResult?.field_map ?? {}
   const published = active?.published ?? false
+  const stale = active?.stale ?? false
 
   const [activeTab, setActiveTab] = useState('dashboard') // 'dashboard' | 'insights'
   const [showRebuild, setShowRebuild] = useState(false)
   const [publishing, setPublishing] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState(false)  
+  
 
   async function handlePublishToggle() {
     setPublishing(true)
     try {
       const mode = isAgentMode ? 'agent' : 'pipeline'
-      const result = await api.publishDashboard(datasetId, mode)
-      if (isAgentMode) {
-        setAgentResult(prev => ({ ...prev, published: result.published }))
-      } else {
-        setDashboardPublished(result.published)
-      }
+      await api.publishDashboard(datasetId, mode)
+      await dasher.rehydrate(datasetId)
     } catch {
       // silently ignore — toggle stays at prior state
     } finally {
@@ -109,16 +107,18 @@ export default function Workspace({ dasher }) {
           </div>
         </div>
 
-        <div>
-          <div className={sectionLabel}>Steering Hint</div>
-          <button
-            onClick={() => setShowRebuild(true)}
-            disabled={showRebuild}
-            className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
-          >
-            Re-infer Plan
-          </button>
-        </div>
+        {activeTab === 'dashboard' && (
+          <div>
+            <div className={sectionLabel}>Steering Hint</div>
+            <button
+              onClick={() => setShowRebuild(true)}
+              disabled={showRebuild}
+              className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
+            >
+              Re-infer Plan
+            </button>
+          </div>
+        )}
 
         <div>
           <div className={sectionLabel}>Pipeline Status</div>
@@ -155,6 +155,11 @@ export default function Workspace({ dasher }) {
           >
             {publishing ? '…' : published ? 'Published' : 'Private'}
           </button>
+          {published && stale && (
+            <p className="mt-2 font-mono text-[10.5px] text-danger leading-snug">
+              Shared version is out of date — republish to update the public link.
+            </p>
+          )}
           {published && (
             <button
               onClick={handleCopyLink}
@@ -189,15 +194,31 @@ export default function Workspace({ dasher }) {
                 datasetId={datasetId}
                 fieldMap={fieldMap}
                 mode={isAgentMode ? 'agent' : 'pipeline'}
-                onCardAdded={card => isAgentMode
-                  ? setAgentResult(prev => ({ ...prev, charts_built: [...prev.charts_built, card] }))
-                  : addCard(card)}
-                onCardEdited={(cardId, card) => isAgentMode
-                  ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.map(c => c.card_id === cardId ? card : c) }))
-                  : replaceCard(cardId, card)}
-                onCardDeleted={cardId => isAgentMode
-                  ? setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.filter(c => c.card_id !== cardId) }))
-                  : removeCard(cardId)}
+                onCardAdded={card => {
+                  if (isAgentMode) {
+                    setAgentResult(prev => ({ ...prev, charts_built: [...prev.charts_built, card] }))
+                    dasher.rehydrate(datasetId)
+                  } else {
+                    addCard(card)
+                  }
+                }}
+                onCardEdited={(cardId, card) => {
+                  if (isAgentMode) {
+                    setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.map(c => c.card_id === cardId ? card : c) }))
+                    dasher.rehydrate(datasetId)
+                  } else {
+                    replaceCard(cardId, card)
+                  }
+                }}
+                onCardDeleted={cardId => {
+                  if (isAgentMode) {
+                    setAgentResult(prev => ({ ...prev, charts_built: prev.charts_built.filter(c => c.card_id !== cardId) }))
+                    dasher.rehydrate(datasetId)
+                  } else {
+                    removeCard(cardId)
+                  }
+                }}
+
               />
 
               {isAgentMode && agentResult?.trace?.length > 0 && (

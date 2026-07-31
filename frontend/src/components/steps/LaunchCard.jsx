@@ -65,12 +65,15 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
 
     const hasFinish = result.some(e => e.type === 'finish')
     if (hasFinish) {
+      const createdEvent = result.find(e => e.type === 'dataset_created')
+      // console.log('DEBUG createdEvent:', createdEvent, 'full result:', result)
       applyLaunchEvents(result, mode, {
         name: name.trim() || null,
         comment: comment.trim() || null,
         original_filename: file.name,
       })
-      onDone()
+      
+      onDone(createdEvent?.dataset_id)
     }
   }
 
@@ -101,7 +104,7 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
     )
     const errorEvent = result.find(e => e.type === 'phase_error')
     if (!errorEvent) {
-      applyAgentEvents(result, isAgentMode, submittedGoal || null)
+      applyAgentEvents(result, isAgentMode, submittedGoal || null, datasetId)
       onDone()
     }
     // on error, ProcessingView shows its own terminal state; dismiss handlers
@@ -256,6 +259,15 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
         >
           {isRebuild ? (rebuilding ? 'Rebuilding…' : 'Rebuild Dashboard') : 'Launch Dashboard →'}
         </button>
+        {isRebuild && (
+          <button
+            onClick={onDone}
+            disabled={rebuilding}
+            className="px-6 py-2.5 rounded-control font-display text-[12.5px] font-semibold uppercase tracking-wide text-muted hover:text-fg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+        )}
       </div>
     </div>
   )

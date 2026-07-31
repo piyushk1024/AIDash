@@ -117,7 +117,7 @@ async def update_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict,
         await conn.execute(
             """
             UPDATE dashboard_plans
-            SET plan_json = $1
+            SET plan_json = $1, updated_at = NOW()
             WHERE plan_id = (
                 SELECT plan_id FROM dashboard_plans
                 WHERE dataset_id = $2
@@ -128,21 +128,6 @@ async def update_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, plan: dict,
             """,
             plan, dataset_id, effective_mode,
         )
-    # async with pool.acquire() as conn:
-    #     await conn.execute(
-    #         """
-    #         UPDATE dashboard_plans
-    #         SET plan_json = $1
-    #         WHERE plan_id = (
-    #             SELECT plan_id FROM dashboard_plans
-    #             WHERE dataset_id = $2
-    #             ORDER BY created_at DESC
-    #             LIMIT 1
-    #         )
-    #         """,
-    #         plan, dataset_id,
-    #     )
-
 
 # ── Dataset metadata ──────────────────────────────────────────
 
@@ -226,7 +211,7 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
 
         pipeline_plan_row = await conn.fetchrow(
             """
-            SELECT plan_json FROM dashboard_plans
+            SELECT plan_json, updated_at FROM dashboard_plans
             WHERE dataset_id = $1 AND COALESCE(plan_json->>'mode', 'pipeline') = 'pipeline'
             ORDER BY created_at DESC LIMIT 1
             """,
@@ -235,19 +220,53 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
 
         agent_plan_row = await conn.fetchrow(
             """
-            SELECT plan_json FROM dashboard_plans
+            SELECT plan_json, updated_at FROM dashboard_plans
             WHERE dataset_id = $1 AND plan_json->>'mode' = 'agent'
             ORDER BY created_at DESC LIMIT 1
             """,
             dataset_id,
         )
 
+        # One row per mode ever published (upserted on republish) — lets
+        # us tell whether the live plan has moved on since the last
+        # publish for that mode, without touching dashboard_plans itself.
+        snapshot_rows = await conn.fetch(
+            "SELECT mode, published_at FROM published_snapshots WHERE dataset_id = $1",
+            dataset_id,
+        )
+        published_at_by_mode = {row["mode"]: row["published_at"] for row in snapshot_rows}
+
+    # A mode's public link is "stale" whenever it no longer matches what
+    # the owner is currently viewing — either because the OTHER mode
+    # holds the published slot right now, or because this mode's own
+    # content has moved on since it was last published.
+    something_published = metadata["published"]
+    published_mode = metadata["published_mode"]
+
+    def is_stale(mode, plan_updated_at):
+        if not something_published:
+            return False
+        if published_mode != mode:
+            return True
+        snap_time = published_at_by_mode.get(mode)
+        if not snap_time or not plan_updated_at:
+            return False
+        return plan_updated_at > snap_time
+
+    stale_by_mode = {
+        "pipeline": is_stale("pipeline", pipeline_plan_row["updated_at"] if pipeline_plan_row else None),
+        "agent":    is_stale("agent", agent_plan_row["updated_at"] if agent_plan_row else None),
+    }
+
+
     return {
         "metadata":      dict(metadata),
         "semantics":     semantics_row["semantics_json"] if semantics_row else None,
         "business_hint": semantics_row["business_hint"] if semantics_row else None,
-        "pipeline_plan": pipeline_plan_row["plan_json"] if pipeline_plan_row else None,
-        "agent_plan":    agent_plan_row["plan_json"] if agent_plan_row else None,
+        "pipeline_plan": pipeline_plan_row["plan_json"] if pipeline_plan_row else None,        
+        "agent_plan":    agent_plan_row["plan_json"] if agent_plan_row else None,        
+        "stale_by_mode": stale_by_mode,
+
     }
 
 
@@ -366,12 +385,12 @@ async def get_published_snapshot(pool: asyncpg.Pool, dataset_id: str, mode: str)
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT snapshot_json FROM published_snapshots
+            SELECT snapshot_json, published_at  FROM published_snapshots
             WHERE dataset_id = $1 AND mode = $2
             """,
             dataset_id, mode,
         )
-        return row["snapshot_json"] if row else None
+        return dict(row) if row else None
 
 # ── Publish ───────────────────────────────────────────────────
 
@@ -379,7 +398,7 @@ async def get_published_dashboard(pool: asyncpg.Pool, dataset_id: str):
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
             """
-            SELECT published, published_mode
+            SELECT published, published_mode, name
             FROM dataset_metadata
             WHERE dataset_id = $1
             """,
