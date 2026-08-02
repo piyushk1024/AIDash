@@ -6,6 +6,7 @@ from reportlab.lib.units import inch
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
+from PIL import Image as PILImage
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,9 @@ def generate_agent_report_pdf(dashboard_title: str, rationale: str, charts: list
     title_style = ParagraphStyle(
         "ReportTitle", parent=styles["Title"], alignment=TA_CENTER, spaceAfter=18,
     )
-    heading_style = styles["Heading2"]
+    heading_style = ParagraphStyle(
+        "ChartHeading", parent=styles["Heading2"], keepWithNext=True,
+    )
     body_style = styles["BodyText"]
 
     story = [Paragraph(dashboard_title or "Dashboard Report", title_style)]
@@ -56,6 +59,18 @@ def generate_agent_report_pdf(dashboard_title: str, rationale: str, charts: list
         else:
             try:
                 png_bytes = base64.b64decode(image_base64)
+                img_buffer = io.BytesIO(png_bytes)
+
+                native_width, native_height = PILImage.open(img_buffer).size
+                img_buffer.seek(0)
+
+                aspect = native_height / native_width
+                width = CHART_IMAGE_WIDTH
+                height = width * aspect
+                if height > CHART_IMAGE_HEIGHT:
+                    height = CHART_IMAGE_HEIGHT
+                    width = height / aspect
+                    
                 story.append(Image(io.BytesIO(png_bytes), width=CHART_IMAGE_WIDTH, height=CHART_IMAGE_HEIGHT))
             except Exception:
                 logger.exception("Failed to decode chart image for '%s'", chart_title)
