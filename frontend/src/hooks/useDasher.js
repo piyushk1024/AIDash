@@ -132,6 +132,7 @@ export function useDasher() {
         ...(prev ?? {}),
         ...(launchMeta ?? {}),
         profile: profileDone?.profile,
+        field_map: profileDone?.field_map ?? prev?.field_map,
       }));
     }
 

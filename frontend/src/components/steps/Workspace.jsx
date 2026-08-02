@@ -5,6 +5,7 @@ import AgentTrace from './AgentTrace'
 import HealingSummary from './HealingSummary'
 import LaunchCard from './LaunchCard'
 import { api } from '../../lib/api'
+import { useToast } from '../../hooks/useToast'
 
 const sectionLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted mb-2"
 
@@ -36,10 +37,12 @@ export default function Workspace({ dasher }) {
   const published = active?.published ?? false
   const stale = active?.stale ?? false
 
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState('dashboard') // 'dashboard' | 'insights'
   const [showRebuild, setShowRebuild] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [copied, setCopied] = useState(false)  
+  
   
 
   async function handlePublishToggle() {
@@ -49,6 +52,7 @@ export default function Workspace({ dasher }) {
       await api.publishDashboard(datasetId, mode)
       await dasher.rehydrate(datasetId)
     } catch {
+      toast.error('Publish failed. Try again.')
       // silently ignore — toggle stays at prior state
     } finally {
       setPublishing(false)

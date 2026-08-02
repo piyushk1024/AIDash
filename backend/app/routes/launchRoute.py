@@ -115,7 +115,7 @@ async def launch_dataset_stream(
                 yield _sse_format({"type": "step_started", "phase": "profile"})
                 profile = await run_in_threadpool(profile_csv, save_path, dataset_id)
                 await persist_profile_json(db, dataset_id, profile)
-                yield _sse_format({"type": "step_done", "phase": "profile"})
+                yield _sse_format({"type": "step_done", "phase": "profile", "field_map": field_map})
 
                 yield _sse_format({"type": "step_started", "phase": "semantics"})
                 semantics_result = await infer_semantics_with_llm(dataset_profile=profile, business_hint=hint)

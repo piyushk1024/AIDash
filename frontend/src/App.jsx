@@ -8,6 +8,8 @@ import SharePage from './components/sharepage'
 import LaunchCard from './components/steps/LaunchCard'
 import Workspace from './components/steps/Workspace'
 import { useTheme } from './hooks/useTheme'
+import Toast, { ToastProvider } from './components/steps/Toast'
+import Modal from './components/Modal'
 
 function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   return (
@@ -67,6 +69,8 @@ function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
 
 export default function App() {
   return (
+    <ToastProvider>
+    <Toast />
     <Routes>
       <Route path="/login" element={<AuthPage />} />
       <Route path="/share/:datasetId" element={<SharePage />} />
@@ -75,6 +79,7 @@ export default function App() {
       <Route path="/d/:datasetId" element={<DasherApp />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ToastProvider>
   )
 }
 
@@ -95,6 +100,8 @@ function DasherApp() {
 
   const isLaunchRoute = location.pathname === '/launch'
   const isWorkspaceRoute = Boolean(routeDatasetId)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
+
 
   useEffect(() => {
     if (!auth.isAuthenticated) return
@@ -114,7 +121,7 @@ function DasherApp() {
     rehydrate(routeDatasetId).then(ok => {      
       if (!ok) navigate('/', { replace: true })
     })
-  }, [auth.isAuthenticated, routeDatasetId])
+  }, [auth.isAuthenticated, routeDatasetId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!auth.isAuthenticated) return <Navigate to="/login" replace />
 
@@ -130,6 +137,7 @@ function DasherApp() {
   async function handleDeleteDataset(datasetId) {
     await api.deleteDataset(datasetId)
     setDatasets(prev => prev.filter(d => d.dataset_id !== datasetId))
+    setPendingDeleteId(null)
   }
 
   function handleGoHome() {
@@ -184,7 +192,8 @@ function DasherApp() {
                       <span className="ml-3 text-xs text-muted">{ds.dataset_id.slice(0, 8)}</span>
                     </button>
                     <button
-                      onClick={() => handleDeleteDataset(ds.dataset_id)}
+                      // onClick={() => handleDeleteDataset(ds.dataset_id)}
+                      onClick={() => setPendingDeleteId(ds.dataset_id)}
                       title="Delete dataset"
                       className="w-9 h-9 flex items-center justify-center rounded-icon border border-transparent hover:border-danger/40 hover:text-danger font-mono text-xs text-muted transition-all duration-150"
                     >
@@ -201,6 +210,24 @@ function DasherApp() {
               </div>
             )}
           </div>
+          <Modal open={Boolean(pendingDeleteId)} onClose={() => setPendingDeleteId(null)}>
+          <p className="font-display font-semibold text-fg mb-1">Delete this dataset?</p>
+          <p className="font-mono text-xs text-muted mb-5">This can't be undone. The dashboard and all its charts will be permanently removed.</p>
+          <div className="flex gap-2.5 justify-end">
+            <button
+              onClick={() => setPendingDeleteId(null)}
+              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => handleDeleteDataset(pendingDeleteId)}
+              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
+            >
+              Delete
+            </button>
+          </div>
+        </Modal>
         </div>
       </div>
     )

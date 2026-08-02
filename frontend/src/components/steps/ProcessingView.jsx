@@ -1,6 +1,7 @@
 import AgentTrace from './AgentTrace'
+import ErrorBanner from './ErrorBanner'
 
-const STANDARD_PHASES = [
+const STANDARD_PHASES = [ 
   { key: 'profile',   label: 'PROFILE' },
   { key: 'semantics', label: 'SEMANTICS' },
   { key: 'plan',      label: 'PLAN' },
@@ -177,10 +178,7 @@ export default function ProcessingView({ mode, events, streaming, streamError, d
       ) : (
         <div className="flex flex-col gap-4.5">
           {streamError && !errorEvent && (
-            <div className="flex items-center gap-2.5 border border-danger rounded-control bg-danger/10 px-3.5 py-2.5">
-              <div className="w-2 h-2 rounded-full bg-danger shrink-0" />
-              <span className="font-mono text-xs text-fg">{streamError}</span>
-            </div>
+            <ErrorBanner message={streamError} />
           )}
 
           <div className="flex flex-col">

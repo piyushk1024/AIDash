@@ -5,6 +5,8 @@ import Plot from 'react-plotly.js'
 
 import { useAutocomplete } from './useAutocomplete'
 import { AutocompleteInput } from './NLInput'
+import { useToast } from '../../hooks/useToast'
+import Toast from '../steps/Toast'
 
 // import createPlotlyComponent from 'react-plotly.js/factory'
 // import Plotly from '../../lib/plotly-custom'
@@ -115,6 +117,7 @@ function AddChartCard({ fieldMap, onAdd }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const add = useAutocomplete(fieldMap)
+  
 
   async function handleSubmit() {
     if (!add.value.trim()) return
@@ -168,6 +171,7 @@ export default function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline
   const [cardStates, setCardStates] = useState({})   // card_id -> 'editing' | 'confirm-delete'
   const [editLoading, setEditLoading] = useState(null) // card_id currently saving
   const [editErrors, setEditErrors] = useState({})     // card_id -> error message
+  const toast = useToast()
 
   function setState(cardId, state) {
     setCardStates(prev => ({ ...prev, [cardId]: state }))
@@ -192,6 +196,7 @@ export default function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline
       await api.deleteNLChart(datasetId, cardId, mode)
       onCardDeleted(cardId)
     } catch {
+      toast.error('Delete failed. Try again.')
       setState(cardId, 'view')
     }
   }
