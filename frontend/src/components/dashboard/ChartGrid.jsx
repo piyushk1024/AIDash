@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, forwardRef, useImperativeHandle  } from 'react'
 import { api } from '../../lib/api'
 // import { useAutocomplete, AutocompleteInput } from './NLInput'
 import Plot from 'react-plotly.js'
+import Plotly from 'plotly.js/dist/plotly'
 
 import { useAutocomplete } from './useAutocomplete'
 import { AutocompleteInput } from './NLInput'
@@ -17,7 +18,7 @@ import Toast from '../steps/Toast'
 // cardState: 'view' | 'editing' | 'confirm-delete' — local UI state per card,
 // owned by the parent grid so it can swap the card body without remounting Plotly.
 
-function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubmitEdit, onRequestDelete, onConfirmDelete, editLoading, editError }) {
+function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubmitEdit, onRequestDelete, onConfirmDelete, editLoading, editError, plotRef }) {
   const edit = useAutocomplete(fieldMap)
 
   if (cardState === 'confirm-delete') {
@@ -91,6 +92,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
         </button>
       </div>
       <Plot
+        ref={plotRef}
         data={card.spec.data ?? []}
         layout={{ autosize: true,
           margin: { t: 32, r: 16, b: 60, l: 60 },
@@ -167,11 +169,31 @@ function AddChartCard({ fieldMap, onAdd }) {
 // --- ChartGrid (default export) ---
 // mode: 'pipeline' | 'agent' — targets which dashboard add/edit/delete apply to.
 
-export default function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline', onCardAdded, onCardEdited, onCardDeleted }) {
+export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline', onCardAdded, onCardEdited, onCardDeleted }, ref) {
   const [cardStates, setCardStates] = useState({})   // card_id -> 'editing' | 'confirm-delete'
   const [editLoading, setEditLoading] = useState(null) // card_id currently saving
   const [editErrors, setEditErrors] = useState({})     // card_id -> error message
   const toast = useToast()
+  const plotRefs = useRef({}) // card_id -> graph div element
+
+  useImperativeHandle(ref, () => ({
+    async captureImages() {
+      const images = {}
+      for (const [cardId, gd] of Object.entries(plotRefs.current)) {
+        if (!gd) continue
+        try {
+          images[cardId] = await Plotly.toImage(gd, {
+             format: 'png',
+             width: gd._fullLayout?.width,
+             height: gd._fullLayout?.height,
+             scale: 3,})
+        } catch {
+          // skip cards that failed to render or aren't plotted yet
+        }
+      }
+      return images
+    }
+  }))
 
   function setState(cardId, state) {
     setCardStates(prev => ({ ...prev, [cardId]: state }))
@@ -226,10 +248,11 @@ export default function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline
             onConfirmDelete={() => handleConfirmDelete(card.card_id)}
             editLoading={editLoading === card.card_id}
             editError={editErrors[card.card_id]}
+            plotRef={el => { if (el) plotRefs.current[card.card_id] = el; else delete plotRefs.current[card.card_id] }}
           />
         </div>
       ))}
       <AddChartCard fieldMap={fieldMap} onAdd={handleAdd} />
     </div>
   )
-}
+})

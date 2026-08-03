@@ -339,7 +339,7 @@ async def delete_insight(pool: asyncpg.Pool, dataset_id: str, insight_id: str):
 
 # ── auth stuff ──────────────────────────────────────────────────
 
-async def create_user(pool: asyncpg.Pool, username: str, hashed_password: str, role: str) -> dict:
+async def create_user(pool: asyncpg.Pool, username: str, hashed_password: str, role: str = "editor") -> dict:
     row = await pool.fetchrow(
         """
         INSERT INTO users (username, hashed_password, role)
@@ -353,7 +353,7 @@ async def create_user(pool: asyncpg.Pool, username: str, hashed_password: str, r
 
 async def get_user_by_username(pool: asyncpg.Pool, username: str) -> dict | None:
     row = await pool.fetchrow(
-        "SELECT user_id, username, hashed_password, role FROM users WHERE username = $1",
+        "SELECT user_id, username, hashed_password, role FROM users WHERE LOWER(username)  = $1",
         username,
     )
     return dict(row) if row else None
@@ -474,3 +474,45 @@ async def is_plan_stale(pool: asyncpg.Pool, dataset_id: str, mode: str) -> bool:
             dataset_id, mode,
         )
         return bool(row["stale"]) if row else False
+
+async def create_feedback(pool: asyncpg.Pool, user_id: str, dataset_id: str | None, feedback_type: str, message: str | None) -> dict:
+    row = await pool.fetchrow(
+        """
+        INSERT INTO feedback (user_id, dataset_id, type, message)
+        VALUES ($1, $2, $3, $4)
+        RETURNING feedback_id, user_id, dataset_id, type, message, created_at
+        """,
+        user_id, dataset_id, feedback_type, message,
+    )
+    return dict(row)
+
+
+async def get_admin_stats(pool: asyncpg.Pool) -> dict:
+    user_count = await pool.fetchval("SELECT COUNT(*) FROM users")
+    dataset_count = await pool.fetchval("SELECT COUNT(*) FROM dataset_metadata")
+    mode_counts = await pool.fetch(
+        """
+        SELECT COALESCE(plan_json->>'mode', 'pipeline') AS mode, COUNT(*) AS count
+        FROM dashboard_plans
+        GROUP BY mode
+        """
+    )
+    feedback_count = await pool.fetchval("SELECT COUNT(*) FROM feedback")
+    return {
+        "user_count": user_count,
+        "dataset_count": dataset_count,
+        "dashboards_by_mode": {row["mode"]: row["count"] for row in mode_counts},
+        "feedback_count": feedback_count,
+    }
+
+
+async def get_admin_feedback(pool: asyncpg.Pool) -> list[dict]:
+    rows = await pool.fetch(
+        """
+        SELECT f.feedback_id, f.user_id, u.username, f.dataset_id, f.type, f.message, f.created_at
+        FROM feedback f
+        JOIN users u ON u.user_id = f.user_id
+        ORDER BY f.created_at DESC
+        """
+    )
+    return [dict(row) for row in rows]

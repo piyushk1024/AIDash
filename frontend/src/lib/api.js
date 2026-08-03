@@ -194,4 +194,12 @@ export const api = {
     }
     return res.blob()
   },
+  submitFeedback: (type, message, datasetId = null) =>
+  request('POST', '/feedback', { type, message, dataset_id: datasetId }),
+
+  getAdminStats: () =>
+    request('GET', '/admin/stats'),
+
+  getAdminFeedback: () =>
+    request('GET', '/admin/feedback'),
 }

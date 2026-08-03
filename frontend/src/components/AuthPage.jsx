@@ -169,7 +169,7 @@ export default function AuthPage() {
             <button
               onClick={handleSubmit}
               disabled={loading || !canSubmit}
-              className="mt-1 w-full py-2.5 rounded-control font-display text-[13px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
+              className="mt-1 w-full py-2.5 rounded-control font-display text-[13px] font-semibold uppercase tracking-wide transition-colors border border-muted text-fg disabled:opacity-70 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:border-transparent enabled:cursor-pointer"
             >
               {loading ? '…' : mode === 'login' ? 'Sign in' : 'Create account'}
             </button>

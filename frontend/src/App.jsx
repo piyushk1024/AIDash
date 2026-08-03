@@ -10,8 +10,11 @@ import Workspace from './components/steps/Workspace'
 import { useTheme } from './hooks/useTheme'
 import Toast, { ToastProvider } from './components/steps/Toast'
 import Modal from './components/Modal'
+import AdminPage from './components/AdminPage'
+import FeedbackFab from './components/steps/FeedbackFab'
 
 function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
+  const navigate = useNavigate()
   return (
     <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
       <div className="flex items-center gap-3">
@@ -28,6 +31,14 @@ function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
           >
             <span className="group-hover:-translate-x-0.5 transition-transform duration-150">←</span>
             <span>Home</span>
+          </button>
+        )}
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => navigate('/admin')}
+            className="font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase"
+          >
+            Admin
           </button>
         )}
         <span className="font-mono text-xs text-muted">
@@ -67,6 +78,31 @@ function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   )
 }
 
+function AdminGate() {
+  const auth = useAuth()
+  const [dark] = useTheme()
+
+  if (!auth.isAuthenticated) return <Navigate to="/login" replace />
+  if (auth.user?.role !== 'admin') return <Navigate to="/" replace />
+
+  return (
+    <div className={dark ? 'dark' : ''}>
+      <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
+        <Header
+          showHome
+          onGoHome={() => window.location.href = '/'}
+          user={auth.user}
+          onLogout={auth.logout}
+          dark={dark}
+          onToggleDark={() => {}}
+        />
+        <AdminPage />
+      </div>
+    </div>
+  )
+}
+
+
 export default function App() {
   return (
     <ToastProvider>
@@ -74,6 +110,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<AuthPage />} />
       <Route path="/share/:datasetId" element={<SharePage />} />
+      <Route path="/admin" element={<AdminGate />} />
       <Route path="/" element={<DasherApp />} />
       <Route path="/launch" element={<DasherApp />} />
       <Route path="/d/:datasetId" element={<DasherApp />} />
@@ -168,6 +205,7 @@ function DasherApp() {
             dark={dark}
             onToggleDark={() => setDark(d => !d)}
           />
+          <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
           <div className="max-w-xl mx-auto px-8 py-16">
             <h1 className="font-mono text-[10.5px] tracking-wider uppercase text-muted mb-1">
               AI-Enabled Dashboarding
@@ -244,6 +282,7 @@ function DasherApp() {
           dark={dark}
           onToggleDark={() => setDark(d => !d)}
         />
+        <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
         {isWorkspaceRoute ? (
           hydrating ? (
             <div className="max-w-xl mx-auto px-8 py-16">

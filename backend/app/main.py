@@ -6,10 +6,11 @@ from app.routes import (
     uploadsRoute, profilerRoute, semanticsRoute,
     dashboardRoute, cleanupRoute,
     datasetsRoute, insightsRoute, nlDashboardRoute,
-    authRoute, agentRoute, launchRoute
+    authRoute, agentRoute, launchRoute,feedbackAdminRoute
 )
 from app.services.migrationRunner import run_migrations
 from app.services.telemetry import setup_telemetry, shutdown_telemetry
+
 
 import logging
 logging.basicConfig(level=logging.INFO)
@@ -47,3 +48,4 @@ app.include_router(insightsRoute.router)
 app.include_router(authRoute.router)
 app.include_router(cleanupRoute.router)
 app.include_router(launchRoute.router)
+app.include_router(feedbackAdminRoute.router)

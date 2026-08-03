@@ -1,0 +1,5 @@
+ALTER TABLE feedback
+    ADD COLUMN type TEXT NOT NULL DEFAULT 'other';
+
+ALTER TABLE feedback
+    ALTER COLUMN message DROP NOT NULL;

@@ -10,7 +10,7 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     username: str
     password: str
-    role: str = "editor"
+    # role: str = "editor"
 
 class LoginRequest(BaseModel):
     username: str
@@ -22,7 +22,7 @@ async def register(body: RegisterRequest, db=Depends(get_db)):
     if existing:
         raise HTTPException(status_code=409, detail="Username already taken")
     hashed = await run_in_threadpool(hash_password, body.password)
-    user = await create_user(db, body.username, hashed, body.role)
+    user = await create_user(db, body.username, hashed)#, body.role = "editor")
     return {"user_id": user["user_id"], "username": user["username"], "role": user["role"]}
 
 @router.post("/auth/login")

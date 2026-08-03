@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState,useRef } from 'react'
 import ChartGrid from '../dashboard/ChartGrid'
 import InsightsPanel from './InsightsPanel'
 import AgentTrace from './AgentTrace'
@@ -41,7 +41,9 @@ export default function Workspace({ dasher }) {
   const [activeTab, setActiveTab] = useState('dashboard') // 'dashboard' | 'insights'
   const [showRebuild, setShowRebuild] = useState(false)
   const [publishing, setPublishing] = useState(false)
-  const [copied, setCopied] = useState(false)  
+  const [copied, setCopied] = useState(false)
+  const [exporting, setExporting] = useState(false)
+  const chartGridRef = useRef(null)
   
   
 
@@ -64,6 +66,35 @@ export default function Workspace({ dasher }) {
     navigator.clipboard.writeText(url)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+  async function handleExportPdf() {
+    setExporting(true)
+    try {
+      const images = await chartGridRef.current?.captureImages()
+      const charts = cards
+        .filter(c => images?.[c.card_id])
+        .map(c => ({
+          chart_title: c.chart_title ?? 'Untitled chart',
+          image_base64: images[c.card_id].replace(/^data:image\/png;base64,/, ''),
+        }))
+
+      if (!charts.length) {
+        toast.error('No charts available to export.')
+        return
+      }
+
+      const blob = await api.getAgentReport(datasetId, charts)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${datasetLabel || 'dashboard'}-report.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      toast.error(e.message || 'Export failed. Try again.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   const pipelineSteps = isAgentMode ? AGENT_STEPS : PIPELINE_STEPS
@@ -145,6 +176,18 @@ export default function Workspace({ dasher }) {
             })}
           </div>
         </div>
+        {isAgentMode && (
+          <div>
+            <div className={sectionLabel}>Report</div>
+            <button
+              onClick={handleExportPdf}
+              disabled={exporting || !cards.length}
+              className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed bg-accent text-accent-fg"
+            >
+              {exporting ? 'Exporting…' : 'Export PDF'}
+            </button>
+          </div>
+        )}
 
         <div>
           <div className={sectionLabel}>Publish</div>
@@ -173,6 +216,7 @@ export default function Workspace({ dasher }) {
             </button>
           )}
         </div>
+        
 
       </aside>
 
@@ -194,6 +238,7 @@ export default function Workspace({ dasher }) {
               )}
 
               <ChartGrid
+                ref={chartGridRef}
                 cards={cards}
                 datasetId={datasetId}
                 fieldMap={fieldMap}

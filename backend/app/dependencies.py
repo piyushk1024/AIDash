@@ -24,11 +24,17 @@ async def get_current_user(
         username=payload["username"],
         role=payload["role"],
     )
+async def require_admin(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required")
+    return current_user
 
 async def require_editor(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
     if current_user.role != "editor":
         raise HTTPException(status_code=403, detail="Editor role required")
     return current_user
+
+
 
 async def get_db(request: Request) -> asyncpg.Pool:
     return request.app.state.db_pool
