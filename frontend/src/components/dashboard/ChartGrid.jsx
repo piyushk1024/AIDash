@@ -8,6 +8,7 @@ import { useAutocomplete } from './useAutocomplete'
 import { AutocompleteInput } from './NLInput'
 import { useToast } from '../../hooks/useToast'
 import Toast from '../steps/Toast'
+import Modal from '../Modal'
 
 // import createPlotlyComponent from 'react-plotly.js/factory'
 // import Plotly from '../../lib/plotly-custom'
@@ -20,6 +21,46 @@ import Toast from '../steps/Toast'
 
 function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubmitEdit, onRequestDelete, onConfirmDelete, editLoading, editError, plotRef }) {
   const edit = useAutocomplete(fieldMap)
+  const localGdRef = useRef(null)
+  const modalGdRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
+
+  // Merge local ref (for autoscale/save-image/expand) with parent's plotRef (for PDF export capture)
+  function setGd(el) {
+    localGdRef.current = el
+    plotRef(el)
+  }
+
+  function handleAutoscale() {
+    const gd = localGdRef.current
+    if (!gd) return
+    Plotly.relayout(gd, { 'xaxis.autorange': true, 'yaxis.autorange': true })
+  }
+
+  function handleModalAutoscale() {
+    const gd = modalGdRef.current
+    if (!gd) return
+    Plotly.relayout(gd, { 'xaxis.autorange': true, 'yaxis.autorange': true })
+  }
+
+  async function handleSaveImage() {
+    const gd = modalGdRef.current
+    if (!gd) return
+    try {
+      const dataUrl = await Plotly.toImage(gd, {
+        format: 'png',
+        width: gd._fullLayout?.width,
+        height: gd._fullLayout?.height,
+        scale: 3,
+      })
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `${card.chart_title || 'chart'}.png`
+      a.click()
+    } catch {
+      // silently skip if not rendered yet
+    }
+  }
 
   if (cardState === 'confirm-delete') {
     return (
@@ -65,7 +106,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
       <div className="border border-red-500/30 rounded p-4 font-mono text-xs text-red-400 relative group">
         ✕ {card.chart_title ?? 'Untitled chart'} — could not be built
         <button onClick={onRequestDelete} className="hidden group-hover:block absolute top-2 right-2 bg-transparent text-neutral-500 hover:text-red-400">
-          ✕
+          🗑
         </button>
       </div>
     )
@@ -81,31 +122,66 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
     ? Math.max(320, rowCount * 28 + 100)
     : 320
 
+  const plotLayout = {
+    autosize: true,
+    margin: { t: 32, r: 16, b: 60, l: 60 },
+    ...card.spec.layout,
+    xaxis: { automargin: true, ...card.spec.layout?.xaxis },
+    yaxis: { automargin: true, ...card.spec.layout?.yaxis },
+  }
+
   return (
     <div className="border border-neutral-800 rounded p-2 relative group">
-      <div className="hidden group-hover:flex absolute top-2 right-2 gap-2 z-10 bg-neutral-950/80 rounded px-1.5 py-1">
-        <button onClick={onEdit} title="Edit" className="bg-transparent text-neutral-400 hover:text-amber-400 text-xs">
+      <div className="hidden group-hover:flex absolute top-2 right-2 gap-2 z-10 bg-neutral-950/80 rounded px-2 py-1.5">
+        <button onClick={handleAutoscale} title="Autoscale" className="bg-transparent text-neutral-400 hover:text-amber-400 text-sm">
+          ⟳
+        </button>
+        <button onClick={() => setExpanded(true)} title="Expand" className="bg-transparent text-neutral-400 hover:text-amber-400 text-sm">
+          ⤢
+        </button>
+        <button onClick={onEdit} title="Edit" className="bg-transparent text-neutral-400 hover:text-amber-400 text-sm">
           ✎
         </button>
-        <button onClick={onRequestDelete} title="Delete" className="bg-transparent text-neutral-400 hover:text-red-400 text-xs">
-          ✕
+        <button onClick={onRequestDelete} title="Delete" className="bg-transparent text-neutral-400 hover:text-red-400 text-sm">
+          🗑
         </button>
       </div>
       <Plot
-        ref={plotRef}
+        ref={setGd}
         data={card.spec.data ?? []}
-        layout={{ autosize: true,
-          margin: { t: 32, r: 16, b: 60, l: 60 },
-          xaxis: { automargin: true, ...card.spec.layout?.xaxis },
-          yaxis: { automargin: true, ...card.spec.layout?.yaxis },
-           ...card.spec.layout }}
+        layout={plotLayout}
         useResizeHandler
         style={{ width: '100%', height: `${chartHeight}px` }}
-        config={{ displayModeBar: false, responsive: true }}
+        config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
       />
       {card.healed && (
         <div className="px-2 pb-1 font-mono text-[10px] text-amber-400/60">healed</div>
       )}
+      <Modal open={expanded} onClose={() => setExpanded(false)} size="large">
+        {expanded && (
+          <div className="relative">
+            <div className="absolute top-0 right-0 z-10 flex gap-2">
+              <button onClick={handleModalAutoscale} title="Reset scale" className="bg-neutral-800 text-neutral-300 hover:bg-amber-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
+                Reset Scale
+              </button>
+              <button onClick={handleSaveImage} title="Save as image" className="bg-neutral-800 text-neutral-300 hover:bg-amber-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
+                Download Image
+              </button>
+              <button onClick={() => setExpanded(false)} title="Close" className="bg-neutral-800 text-neutral-300 hover:bg-red-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
+                X
+              </button>
+            </div>
+            <Plot
+              ref={el => { modalGdRef.current = el }}
+              data={card.spec.data ?? []}
+              layout={plotLayout}
+              useResizeHandler
+              style={{ width: '100%', height: '70vh' }}
+              config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -119,7 +195,6 @@ function AddChartCard({ fieldMap, onAdd }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const add = useAutocomplete(fieldMap)
-  
 
   async function handleSubmit() {
     if (!add.value.trim()) return

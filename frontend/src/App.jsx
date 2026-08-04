@@ -235,7 +235,7 @@ function DasherApp() {
                       title="Delete dataset"
                       className="w-9 h-9 flex items-center justify-center rounded-icon border border-transparent hover:border-danger/40 hover:text-danger font-mono text-xs text-muted transition-all duration-150"
                     >
-                      ✕
+                      🗑
                     </button>
                   </div>
                 ))}

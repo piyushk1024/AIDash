@@ -128,10 +128,10 @@ export default function InsightsPanel({ datasetId }) {
                 <span className="font-mono text-xs text-neutral-300 flex-1">{entry.prompt}</span>
                 <span
                   onClick={(e) => handleDelete(entry.insight_id, e)}
-                  className="font-mono text-[10px] text-neutral-600 hover:text-red-400 transition-colors px-1"
+                  className="font-mono text-[15px] text-neutral-600 hover:text-red-400 transition-colors px-1"
                   title="Delete"
                 >
-                  ✕
+                  🗑
                 </span>
                 <span className="font-mono text-[10px] text-neutral-600">
                   {entry.expanded ? '▴' : '▾'}

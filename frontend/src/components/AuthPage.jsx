@@ -56,7 +56,7 @@ export default function AuthPage() {
       <div className="min-h-screen bg-bg flex">
 
         {/* Left — marketing panel */}
-        <div className="hidden lg:flex flex-1 flex-col justify-center gap-7 px-16 relative min-w-0">
+        <div className="hidden lg:flex flex-1 flex-col  justify-center gap-7 px-16 relative min-w-0">
           <div className="absolute top-10 left-16 flex items-center gap-3">
             <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
             <span className="font-display font-medium text-[18px] text-fg">DASHER</span>
