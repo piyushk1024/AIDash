@@ -19,6 +19,27 @@ _PASSTHROUGH_PLOTLY_TYPE = {
     ChartType.MAP: "choroplethmapbox",
 }
 
+ROW_CHART_CAP = 15
+
+
+ROW_CHART_CAP = 15
+
+
+def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
+    """Row (horizontal bar) and table charts show individual records/categories,
+    not raw data dumps — cap to top N so cards/modal/exports never need to
+    scroll or clip. Sorts by y_alias descending when present (row charts,
+    ranking by measure); table charts have no y_alias, so this just takes
+    the first N in query order. Falls back to a plain slice if y_alias is
+    missing or non-numeric (avoids crashing the chart over a sort issue,
+    capped output still beats an uncapped one)."""
+    y_alias = chart.get("y_alias")
+    if y_alias:
+        try:
+            rows = sorted(rows, key=lambda r: r.get(y_alias) or 0, reverse=True)
+        except TypeError:
+            pass
+    return rows[:ROW_CHART_CAP]
 
 async def execute_chart_query(pool, chart: dict) -> dict:
     """
@@ -35,6 +56,8 @@ async def execute_chart_query(pool, chart: dict) -> dict:
     async with pool.acquire() as conn:
         records = await conn.fetch(chart["sql"])
     rows = [dict(r) for r in records]
+    if chart.get("chart_type") in (ChartType.ROW.value, ChartType.TABLE.value):
+        rows = _cap_tabular_rows(rows, chart)
 
     spec = _build_plotly_spec(rows, chart)
     return {"rows": rows, "spec": spec}
