@@ -1,4 +1,4 @@
-import { useState,useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import ChartGrid from '../dashboard/ChartGrid'
 import InsightsPanel from './InsightsPanel'
 import AgentTrace from './AgentTrace'
@@ -22,6 +22,8 @@ const AGENT_STEPS = [
   { key: 'dashboard', label: 'AGENT RUN' },
 ]
 
+const SIDEBAR_COLLAPSE_BREAKPOINT = '(max-width: 768px)'
+
 export default function Workspace({ dasher }) {
   const {
     datasetId, uploadResult, status,
@@ -43,9 +45,17 @@ export default function Workspace({ dasher }) {
   const [publishing, setPublishing] = useState(false)
   const [copied, setCopied] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [collapsed, setCollapsed] = useState(false)
   const chartGridRef = useRef(null)
-  
-  
+
+  // Auto-collapse sidebar on narrow screens; user can still manually toggle after.
+  useEffect(() => {
+    const mq = window.matchMedia(SIDEBAR_COLLAPSE_BREAKPOINT)
+    const handler = e => setCollapsed(e.matches)
+    handler(mq)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   async function handlePublishToggle() {
     setPublishing(true)
@@ -110,115 +120,126 @@ export default function Workspace({ dasher }) {
 
   return (
     <div className="max-w-6xl mx-auto px-8 py-10 flex gap-10">
-      <aside className="w-64 shrink-0 flex flex-col gap-7">
+      <div className="flex flex-col gap-3 shrink-0">
+        <button
+          onClick={() => setCollapsed(c => !c)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="px-2 py-2 rounded-control border border-muted bg-card text-fg hover:border-accent hover:text-accent transition-colors font-mono text-[13px] leading-none"
+        >
+          {collapsed ? '»' : '«'}
+        </button>
 
-        <div>
-          <div className={sectionLabel}>Active Dataset</div>
-          <div className="flex items-center gap-2 mb-2">
-            <div className="font-mono text-[13px] text-fg truncate">
-              {datasetLabel}
-            </div>
-            <span className="font-mono text-[9.5px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-icon border border-muted text-muted shrink-0">
-              {isAgentMode ? 'Agent' : 'Pipeline'}
-            </span>
-          </div>
-          <div className="font-mono text-[10px] text-muted mb-2">
-            {datasetId?.slice(0, 8)}
-            </div>
-        
-          <div className="flex items-center gap-1 p-[3px] border border-muted rounded-control bg-bg w-fit">
-            <button
-              onClick={() => setActiveTab('dashboard')}
-              className={`px-3 py-1.5 rounded-icon font-display text-[11px] font-medium uppercase tracking-wide transition-colors ${activeTab === 'dashboard' ? 'bg-accent text-accent-fg font-semibold' : 'text-muted hover:text-fg'}`}
-            >
-              Dashboard
-            </button>
-            <button
-              onClick={() => setActiveTab('insights')}
-              className={`px-3 py-1.5 rounded-icon font-display text-[11px] font-medium uppercase tracking-wide transition-colors ${activeTab === 'insights' ? 'bg-accent text-accent-fg font-semibold' : 'text-muted hover:text-fg'}`}
-            >
-              Insights
-            </button>
-          </div>
-        </div>
+        {!collapsed && (
+        <aside className="w-64 flex flex-col gap-7">
 
-        {activeTab === 'dashboard' && (
           <div>
-            <div className={sectionLabel}>Steering Hint</div>
-            <button
-              onClick={() => setShowRebuild(true)}
-              disabled={showRebuild}
-              className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
-            >
-              Re-infer Plan
-            </button>
+            <div className={sectionLabel}>Active Dataset</div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="font-mono text-[13px] text-fg truncate">
+                {datasetLabel}
+              </div>
+              <span className="font-mono text-[9.5px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-icon border border-muted text-muted shrink-0">
+                {isAgentMode ? 'Agent' : 'Pipeline'}
+              </span>
+            </div>
+            <div className="font-mono text-[10px] text-muted mb-2">
+              {datasetId?.slice(0, 8)}
+              </div>
+          
+            <div className="flex items-center gap-1 p-[3px] border border-muted rounded-control bg-bg w-fit">
+              <button
+                onClick={() => setActiveTab('dashboard')}
+                className={`px-3 py-1.5 rounded-icon font-display text-[11px] font-medium uppercase tracking-wide transition-colors ${activeTab === 'dashboard' ? 'bg-accent text-accent-fg font-semibold' : 'text-muted hover:text-fg'}`}
+              >
+                Dashboard
+              </button>
+              <button
+                onClick={() => setActiveTab('insights')}
+                className={`px-3 py-1.5 rounded-icon font-display text-[11px] font-medium uppercase tracking-wide transition-colors ${activeTab === 'insights' ? 'bg-accent text-accent-fg font-semibold' : 'text-muted hover:text-fg'}`}
+              >
+                Insights
+              </button>
+            </div>
           </div>
-        )}
 
-        <div>
-          <div className={sectionLabel}>Pipeline Status</div>
-          <div className="flex flex-col gap-2.5">
-            {pipelineSteps.map(step => {
-              const done = status[step.key] === 'done'
-              const loading = status[step.key] === 'loading'
-              return (
-                <div key={step.key} className="flex items-center gap-2.5">
-                  <div className={`w-[9px] h-[9px] rounded-full shrink-0 ${
-                    done ? 'bg-accent border border-accent'
-                    : loading ? 'bg-transparent border border-accent'
-                    : 'bg-transparent border border-muted'
-                  }`} />
-                  <span className={`font-mono text-[11.5px] ${done || loading ? 'text-fg font-semibold' : 'text-muted'}`}>
-                    {step.label}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-        {isAgentMode && (
+          {activeTab === 'dashboard' && (
+            <div>
+              <div className={sectionLabel}>Steering Hint</div>
+              <button
+                onClick={() => setShowRebuild(true)}
+                disabled={showRebuild}
+                className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:cursor-pointer"
+              >
+                Re-infer Plan
+              </button>
+            </div>
+          )}
+
           <div>
-            <div className={sectionLabel}>Report</div>
-            <button
-              onClick={handleExportPdf}
-              disabled={exporting || !cards.length}
-              className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed bg-accent text-accent-fg"
-            >
-              {exporting ? 'Exporting…' : 'Export PDF'}
-            </button>
+            <div className={sectionLabel}>Pipeline Status</div>
+            <div className="flex flex-col gap-2.5">
+              {pipelineSteps.map(step => {
+                const done = status[step.key] === 'done'
+                const loading = status[step.key] === 'loading'
+                return (
+                  <div key={step.key} className="flex items-center gap-2.5">
+                    <div className={`w-[9px] h-[9px] rounded-full shrink-0 ${
+                      done ? 'bg-accent border border-accent'
+                      : loading ? 'bg-transparent border border-accent'
+                      : 'bg-transparent border border-muted'
+                    }`} />
+                    <span className={`font-mono text-[11.5px] ${done || loading ? 'text-fg font-semibold' : 'text-muted'}`}>
+                      {step.label}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-        )}
-
-        <div>
-          <div className={sectionLabel}>Publish</div>
-          <button
-            onClick={handlePublishToggle}
-            disabled={publishing || !active}
-            className={`w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${
-              published
-                ? 'border border-accent text-accent'
-                : 'bg-accent text-accent-fg'
-            }`}
-          >
-            {publishing ? '…' : published ? 'Published' : 'Private'}
-          </button>
-          {published && stale && (
-            <p className="mt-2 font-mono text-[10.5px] text-danger leading-snug">
-              Shared version is out of date — republish to update the public link.
-            </p>
+          {isAgentMode && (
+            <div>
+              <div className={sectionLabel}>Report</div>
+              <button
+                onClick={handleExportPdf}
+                disabled={exporting || !cards.length}
+                className="w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed bg-accent text-accent-fg"
+              >
+                {exporting ? 'Exporting…' : 'Export PDF'}
+              </button>
+            </div>
           )}
-          {published && (
+
+          <div>
+            <div className={sectionLabel}>Publish</div>
             <button
-              onClick={handleCopyLink}
-              className="mt-2 w-full font-mono text-[11px] text-muted hover:text-accent transition-colors truncate text-left"
+              onClick={handlePublishToggle}
+              disabled={publishing || !active}
+              className={`w-full px-3 py-2 rounded-control font-display text-[11px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-40 disabled:cursor-not-allowed ${
+                published
+                  ? 'border border-accent text-accent'
+                  : 'bg-accent text-accent-fg'
+              }`}
             >
-              {copied ? 'Copied!' : `dasher.app/s/${datasetId.slice(0, 8)}`}
+              {publishing ? '…' : published ? 'Published' : 'Private'}
             </button>
-          )}
-        </div>
-        
+            {published && stale && (
+              <p className="mt-2 font-mono text-[10.5px] text-danger leading-snug">
+                Shared version is out of date — republish to update the public link.
+              </p>
+            )}
+            {published && (
+              <button
+                onClick={handleCopyLink}
+                className="mt-2 w-full font-mono text-[11px] text-muted hover:text-accent transition-colors truncate text-left"
+              >
+                {copied ? 'Copied!' : `dasher.app/s/${datasetId.slice(0, 8)}`}
+              </button>
+            )}
+          </div>
 
-      </aside>
+        </aside>
+        )}
+      </div>
 
       <main className="flex-1 min-w-0">
         {activeTab === 'dashboard' ? (

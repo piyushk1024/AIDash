@@ -89,10 +89,13 @@ async def add_nl_chart(
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
 
+    result = {**result, "source": "user"}
     updated_charts = plan["charts"] + [{**chart_spec, **result}]
     updated_plan = {**plan, "charts": updated_charts}
     await update_dashboard_plan(db, dataset_id, updated_plan, mode=body.mode)
     await set_last_active_mode(db, dataset_id, body.mode)
+
+    return result
 
     return result
 
@@ -128,6 +131,7 @@ async def edit_nl_chart(
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
 
+    result = {**result, "source": "user"}
     merged_result = {**chart_spec, **result}
 
     updated_charts = [

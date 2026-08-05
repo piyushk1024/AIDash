@@ -96,6 +96,7 @@ async def dispatch_build_and_add_chart(
         logger.error("Agent chart creation failed for '%s': %s", chart_spec["chart_title"], error)
         observation = {"error": "Chart creation failed after healing attempt."}
     else:
+        result = {**result, "source": "agent"}
         charts_built.append(result)
         observation = {
             "success": True,
@@ -171,6 +172,7 @@ async def dispatch_edit_existing_chart(
         logger.error("Agent chart edit failed for card_id '%s': %s", card_id, error)
         observation = {"error": "Chart edit failed after healing attempt."}
     else:
+        result = {**result, "source": "agent"}
         charts_built[match_index] = result
         observation = {"success": True, "card_id": card_id, "chart_title": chart_spec["chart_title"]}
 

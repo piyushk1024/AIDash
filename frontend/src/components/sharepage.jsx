@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router'
 import Plot from 'react-plotly.js'
+import Plotly from 'plotly.js/dist/plotly'
 import { api } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
+import Modal from './Modal'
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -16,7 +18,44 @@ function timeAgo(iso) {
   return `${days} day${days === 1 ? '' : 's'} ago`
 }
 
+// Toolbar is view-only: autoscale + expand + save-image. No edit/delete —
+// public viewers have no auth/ownership, those actions don't apply here.
 function PublicChartCard({ chart }) {
+  const localGdRef = useRef(null)
+  const modalGdRef = useRef(null)
+  const [expanded, setExpanded] = useState(false)
+
+  function handleAutoscale() {
+    const gd = localGdRef.current
+    if (!gd) return
+    Plotly.relayout(gd, { 'xaxis.autorange': true, 'yaxis.autorange': true })
+  }
+
+  function handleModalAutoscale() {
+    const gd = modalGdRef.current
+    if (!gd) return
+    Plotly.relayout(gd, { 'xaxis.autorange': true, 'yaxis.autorange': true })
+  }
+
+  async function handleSaveImage() {
+    const gd = modalGdRef.current
+    if (!gd) return
+    try {
+      const dataUrl = await Plotly.toImage(gd, {
+        format: 'png',
+        width: gd._fullLayout?.width,
+        height: gd._fullLayout?.height,
+        scale: 3,
+      })
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = `${chart.chart_title || 'chart'}.png`
+      a.click()
+    } catch {
+      // silently skip if not rendered yet
+    }
+  }
+
   if (!chart.spec) {
     return (
       <div className="border border-danger/30 rounded-card p-4 font-mono text-xs text-danger">
@@ -30,28 +69,64 @@ function PublicChartCard({ chart }) {
     ? Math.max(320, rowCount * 28 + 100)
     : 320
 
+  const plotLayout = {
+    autosize: true,
+    margin: { t: 32, r: 16, b: 60, l: 60 },
+    xaxis: { automargin: true, ...chart.spec.layout?.xaxis },
+    yaxis: { automargin: true, ...chart.spec.layout?.yaxis },
+    ...chart.spec.layout,
+  }
+
   return (
-    <div className="border border-muted rounded-card bg-surface overflow-hidden">
-      <div className="px-4 py-3.5 border-b border-muted">
+    <div className="border border-muted rounded-card bg-surface overflow-hidden relative group">
+      <div className="px-4 py-3.5 border-b border-muted flex items-center justify-between">
         <span className="font-display font-medium text-[13.5px] text-fg">
           {chart.chart_title}
         </span>
+        <div className="hidden group-hover:flex gap-3">
+          <button onClick={handleAutoscale} title="Autoscale" className="bg-transparent text-muted hover:text-accent text-base">
+            ⟳
+          </button>
+          <button onClick={() => setExpanded(true)} title="Expand" className="bg-transparent text-muted hover:text-accent text-base">
+            ⤢
+          </button>
+        </div>
       </div>
       <div className="p-2">
         <Plot
+          ref={el => { localGdRef.current = el }}
           data={chart.spec.data ?? []}
-          layout={{
-            autosize: true,
-            margin: { t: 32, r: 16, b: 60, l: 60 },
-            xaxis: { automargin: true, ...chart.spec.layout?.xaxis },
-            yaxis: { automargin: true, ...chart.spec.layout?.yaxis },
-            ...chart.spec.layout,
-          }}
+          layout={plotLayout}
           useResizeHandler
           style={{ width: '100%', height: `${chartHeight}px` }}
-          config={{ displayModeBar: false, responsive: true }}
+          config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
         />
       </div>
+      <Modal open={expanded} onClose={() => setExpanded(false)} size="large">
+        {expanded && (
+          <div className="relative">
+            <div className="absolute top-0 right-0 z-10 flex gap-2">
+              <button onClick={handleModalAutoscale} title="Reset scale" className="bg-surface text-fg hover:bg-accent hover:text-accent-fg text-xs font-mono px-2 py-1 rounded transition-colors border border-muted">
+                Reset Scale
+              </button>
+              <button onClick={handleSaveImage} title="Save as image" className="bg-surface text-fg hover:bg-accent hover:text-accent-fg text-xs font-mono px-2 py-1 rounded transition-colors border border-muted">
+                Download Image
+              </button>
+              <button onClick={() => setExpanded(false)} title="Close" className="bg-surface text-fg hover:bg-danger hover:text-white text-xs font-mono px-2 py-1 rounded transition-colors border border-muted">
+                X
+              </button>
+            </div>
+            <Plot
+              ref={el => { modalGdRef.current = el }}
+              data={chart.spec.data ?? []}
+              layout={plotLayout}
+              useResizeHandler
+              style={{ width: '100%', height: chart.chart_type === 'row' ? `${chartHeight}px` : '70vh' }}
+              config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
+            />
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }

@@ -155,9 +155,13 @@ async def stream_agent(
     pool,
     existing_charts: list | None = None,
 ) -> AsyncGenerator[dict, None]:
+
+    agent_charts = [c for c in (existing_charts or []) if c.get("source") != "user"]
+    locked_charts = [c for c in (existing_charts or []) if c.get("source") == "user"]
+
     field_reference = _build_field_reference(field_map, semantics)
     profile_summary = _build_profile_summary(profile)
-    existing_charts_section = _build_existing_charts_section(existing_charts)
+    existing_charts_section = _build_existing_charts_section(agent_charts )
     has_existing_charts = bool(existing_charts)
 
     system_content = SYSTEM_PROMPT.format(
@@ -222,7 +226,7 @@ async def stream_agent(
                 "tool": "finish",
                 "reasoning": summary,
                 "observation": observation,
-                "charts_built": charts_built,
+                "charts_built": charts_built + locked_charts,
             }
             break
 

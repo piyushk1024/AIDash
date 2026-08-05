@@ -15,7 +15,10 @@ import Modal from '../Modal'
 // const Plot = createPlotlyComponent(Plotly)
 
 // --- RenderedChartCard ---
-// Card shape: {card_id, chart_title, chart_type, rows, spec, healed, failed}.
+// Card shape: {card_id, chart_title, chart_type, rows, spec, healed, failed, source}.
+// source: 'agent' | 'user' | undefined — undefined covers pipeline-built charts
+// (no agentic concept there). Only used by the parent grid to group cards into
+// sections; RenderedChartCard itself stays source-agnostic, no per-card marker.
 // cardState: 'view' | 'editing' | 'confirm-delete' — local UI state per card,
 // owned by the parent grid so it can swap the card body without remounting Plotly.
 
@@ -176,7 +179,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
               data={card.spec.data ?? []}
               layout={plotLayout}
               useResizeHandler
-              style={{ width: '100%', height: '70vh' }}
+              style={{ width: '100%', height: card.chart_type === 'row' ? `${chartHeight}px` : '70vh' }}
               config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
             />
           </div>
@@ -243,6 +246,10 @@ function AddChartCard({ fieldMap, onAdd }) {
 
 // --- ChartGrid (default export) ---
 // mode: 'pipeline' | 'agent' — targets which dashboard add/edit/delete apply to.
+// Cards are grouped into two sections: agent/pipeline-built (source !== 'user')
+// on top, user-added (source === 'user') below a divider. Divider + section
+// only render when userCards is non-empty. AddChartCard always lives in the
+// user section since anything added there becomes source: 'user'.
 
 export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode = 'pipeline', onCardAdded, onCardEdited, onCardDeleted }, ref) {
   const [cardStates, setCardStates] = useState({})   // card_id -> 'editing' | 'confirm-delete'
@@ -259,9 +266,9 @@ export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode 
         try {
           images[cardId] = await Plotly.toImage(gd, {
              format: 'png',
-             width: gd._fullLayout?.width,
-             height: gd._fullLayout?.height,
-             scale: 3,})
+             width: 1200,
+             height: 700,
+             scale: 2,})
         } catch {
           // skip cards that failed to render or aren't plotted yet
         }
@@ -303,31 +310,54 @@ export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode 
     onCardAdded(result)
   }
 
+  function renderCard(card) {
+    return (
+      // Horizontal bar ('row') charts put category labels on the y-axis,
+      // where they compete with a fixed-width column — long labels get
+      // cramped in a half-width card. Giving 'row' charts the full row
+      // is a standard horizontal-bar-chart practice, not specific to any
+      // one dataset's label lengths.
+      <div key={card.card_id ?? card.chart_title} className={card.chart_type === 'row' ? 'md:col-span-2' : ''}>
+        <RenderedChartCard
+          card={card}
+          fieldMap={fieldMap}
+          cardState={cardStates[card.card_id] ?? 'view'}
+          onEdit={() => setState(card.card_id, 'editing')}
+          onCancel={() => setState(card.card_id, 'view')}
+          onSubmitEdit={(value, selectedColumns) => handleSubmitEdit(card.card_id, value, selectedColumns)}
+          onRequestDelete={() => setState(card.card_id, 'confirm-delete')}
+          onConfirmDelete={() => handleConfirmDelete(card.card_id)}
+          editLoading={editLoading === card.card_id}
+          editError={editErrors[card.card_id]}
+          plotRef={el => { if (el) plotRefs.current[card.card_id] = el; else delete plotRefs.current[card.card_id] }}
+        />
+      </div>
+    )
+  }
+
+  const agentCards = (cards ?? []).filter(card => card.source !== 'user')
+  const userCards = (cards ?? []).filter(card => card.source === 'user')
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:grid-flow-row-dense">
-      {(cards ?? []).map(card => (
-        // Horizontal bar ('row') charts put category labels on the y-axis,
-        // where they compete with a fixed-width column — long labels get
-        // cramped in a half-width card. Giving 'row' charts the full row
-        // is a standard horizontal-bar-chart practice, not specific to any
-        // one dataset's label lengths.
-        <div key={card.card_id ?? card.chart_title} className={card.chart_type === 'row' ? 'md:col-span-2' : ''}>
-          <RenderedChartCard
-            card={card}
-            fieldMap={fieldMap}
-            cardState={cardStates[card.card_id] ?? 'view'}
-            onEdit={() => setState(card.card_id, 'editing')}
-            onCancel={() => setState(card.card_id, 'view')}
-            onSubmitEdit={(value, selectedColumns) => handleSubmitEdit(card.card_id, value, selectedColumns)}
-            onRequestDelete={() => setState(card.card_id, 'confirm-delete')}
-            onConfirmDelete={() => handleConfirmDelete(card.card_id)}
-            editLoading={editLoading === card.card_id}
-            editError={editErrors[card.card_id]}
-            plotRef={el => { if (el) plotRefs.current[card.card_id] = el; else delete plotRefs.current[card.card_id] }}
-          />
+    <div className="flex flex-col gap-4">
+      {agentCards.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:grid-flow-row-dense">
+          {agentCards.map(renderCard)}
         </div>
-      ))}
-      <AddChartCard fieldMap={fieldMap} onAdd={handleAdd} />
+      )}
+
+      {userCards.length > 0 && (
+        <div className="flex items-center gap-3">
+          <div className="flex-1 h-px bg-neutral-800" />
+          <span className="font-mono text-[12px] uppercase tracking-wider text-neutral-400">manually added</span>
+          <div className="flex-1 h-px bg-neutral-800" />
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:grid-flow-row-dense">
+        {userCards.map(renderCard)}
+        <AddChartCard fieldMap={fieldMap} onAdd={handleAdd} />
+      </div>
     </div>
   )
 })

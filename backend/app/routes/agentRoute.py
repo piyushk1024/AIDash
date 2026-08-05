@@ -290,6 +290,7 @@ async def run_agent_dashboard_stream(
                         "healed": event["healed"],
                         "rows": event.get("rows"),
                         "spec": event.get("spec"),
+                        "source": "agent",
                     })
                 elif event_type == "chart_edited":
                     match_index = next(
@@ -307,6 +308,7 @@ async def run_agent_dashboard_stream(
                         "healed": event["healed"],
                         "rows": event.get("rows"),
                         "spec": event.get("spec"),
+                        "source": "agent",
                     }
                     if match_index is not None:
                         charts_built[match_index] = edited
