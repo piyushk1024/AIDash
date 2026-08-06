@@ -225,8 +225,8 @@ function AddChartCard({ fieldMap, onAdd }) {
   }
 
   return (
-    <div className="border border-amber-400/30 rounded p-3 min-h-[200px] flex flex-col gap-2 justify-center">
-      <span className="font-mono text-[10px] text-neutral-600">new chart</span>
+    <div className="border border-accent/30 rounded p-3 min-h-[200px] flex flex-col gap-2 justify-center">
+  <span className="font-mono text-[10px] text-muted">new chart</span>
       <AutocompleteInput
         value={add.value}
         onChange={add.handleChange}
@@ -237,7 +237,7 @@ function AddChartCard({ fieldMap, onAdd }) {
         placeholder='e.g. "bar chart of sales by region"'
       />
       {error && <div className="font-mono text-xs text-red-400">✕ {error}</div>}
-      <button onClick={() => { setActive(false); setError(null) }} className="font-mono text-[10px] text-neutral-600 hover:text-neutral-400 transition-colors self-start">
+      <button onClick={() => { setActive(false); setError(null) }} className="font-mono text-[10px] text-muted hover:text-fg transition-colors self-start">
         cancel
       </button>
     </div>

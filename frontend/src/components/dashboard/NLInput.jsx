@@ -21,21 +21,21 @@ export function AutocompleteInput({ value, onChange, suggestions, onSelect, onSu
           placeholder={placeholder}
           disabled={loading}
           autoFocus
-          className="flex-1 bg-transparent border border-neutral-700 rounded px-2 py-1.5 font-mono text-xs text-neutral-200 placeholder-neutral-600 focus:outline-none focus:border-amber-400 transition-colors disabled:opacity-50"
+          className="flex-1 bg-transparent border border-muted rounded px-2 py-1.5 font-mono text-xs text-fg placeholder-muted focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
         />
         <button
           onClick={onSubmit}
           disabled={loading || !value.trim()}
-          className="px-3 py-1.5 rounded font-mono text-xs tracking-widest uppercase transition-all disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300"
+            className="px-3 py-1.5 rounded font-mono text-xs tracking-widest uppercase transition-all disabled:bg-surface disabled:text-muted disabled:cursor-not-allowed enabled:bg-accent enabled:text-accent-fg enabled:hover:bg-accent/90"
         >
           {loading ? '...' : submitLabel}
         </button>
       </div>
       {suggestions.length > 0 && (
-        <div className="absolute z-10 left-0 right-16 top-full mt-1 bg-neutral-900 border border-neutral-700 rounded shadow-lg overflow-hidden">
+        <div className="absolute z-10 left-0 right-16 top-full mt-1 bg-surface border border-muted rounded shadow-lg overflow-hidden">
           {suggestions.map(col => (
             <button key={col} onClick={() => onSelect(col)}
-              className="w-full text-left px-3 py-1.5 font-mono text-xs text-neutral-300 hover:bg-neutral-800 hover:text-amber-400 transition-colors">
+                      className="w-full text-left px-3 py-1.5 font-mono text-xs text-fg hover:bg-bg hover:text-accent transition-colors">
               {col}
             </button>
           ))}

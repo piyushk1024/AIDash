@@ -174,7 +174,7 @@ export default function Workspace({ dasher }) {
               </button>
             </div>
           )}
-
+        {activeTab === 'dashboard' && (
           <div>
             <div className={sectionLabel}>Pipeline Status</div>
             <div className="flex flex-col gap-2.5">
@@ -196,7 +196,8 @@ export default function Workspace({ dasher }) {
               })}
             </div>
           </div>
-          {isAgentMode && (
+        )}
+          {isAgentMode && activeTab === 'dashboard' && (
             <div>
               <div className={sectionLabel}>Report</div>
               <button
@@ -208,7 +209,7 @@ export default function Workspace({ dasher }) {
               </button>
             </div>
           )}
-
+        {activeTab === 'dashboard' && (
           <div>
             <div className={sectionLabel}>Publish</div>
             <button
@@ -236,6 +237,7 @@ export default function Workspace({ dasher }) {
               </button>
             )}
           </div>
+          )}
 
         </aside>
         )}
