@@ -56,38 +56,40 @@ export default function AuthPage() {
       <div className="min-h-screen bg-bg flex">
 
         {/* Left — marketing panel */}
-        <div className="hidden lg:flex flex-1 flex-col  justify-center gap-7 px-16 relative min-w-0">
+        <div className="hidden lg:flex flex-1 flex-col justify-center items-center px-16 relative min-w-0">
           <div className="absolute top-10 left-16 flex items-center gap-3">
             <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
             <span className="font-display font-medium text-[18px] text-fg">DASHER</span>
           </div>
 
-          <div className="flex items-center gap-2.5 w-fit bg-surface border border-muted rounded-full px-4 py-2.5 font-mono text-xs text-muted">
-            <span className="text-accent font-bold">$</span>
-            <span>dasher --input revenue.csv --infer --build</span>
-            <span className="w-[7px] h-[13px] bg-accent opacity-85 animate-pulse shrink-0" />
-          </div>
-
-          <h1 className="font-display font-extrabold text-5xl leading-[1.06] text-fg tracking-tight">
-            Drop a CSV.<br />
-            Get a <span className="text-accent">dashboard.</span>
-          </h1>
-          <p className="font-mono text-[14.5px] leading-relaxed text-muted max-w-[440px]">
-            Dasher profiles your data, infers what matters, and builds charts you steer with plain language — no schema mapping, no chart builder.
-          </p>
-
-          <div className="flex gap-9 mt-2">
-            <div className="flex flex-col gap-1">
-              <span className="font-display font-bold text-2xl text-fg">&lt;2 MIN</span>
-              <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">CSV to charts</span>
+          <div className="w-full max-w-[560px] flex flex-col gap-7">
+            <div className="flex items-center gap-2.5 w-fit bg-surface border border-muted rounded-full px-4 py-2.5 font-mono text-xs text-muted">
+              <span className="text-accent font-bold">$</span>
+              <span>dasher --input revenue.csv --infer --build</span>
+              <span className="w-[7px] h-[13px] bg-accent opacity-85 animate-pulse shrink-0" />
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-display font-bold text-2xl text-fg">0</span>
-              <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">Manual chart config</span>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="font-display font-bold text-2xl text-fg">1</span>
-              <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">Steering hint away</span>
+
+            <h1 className="font-display font-extrabold text-5xl leading-[1.06] text-fg tracking-tight">
+              Drop a CSV.<br />
+              Get a <span className="text-accent">dashboard.</span>
+            </h1>
+            <p className="font-mono text-[14.5px] leading-relaxed text-muted max-w-[440px]">
+              Dasher profiles your data, infers what matters, and builds charts you steer with plain language — no schema mapping, no chart builder.
+            </p>
+
+            <div className="flex gap-9 mt-2">
+              <div className="flex flex-col gap-1">
+                <span className="font-display font-bold text-2xl text-fg">&lt;2 MIN</span>
+                <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">CSV to charts</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="font-display font-bold text-2xl text-fg">0</span>
+                <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">Manual chart config</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="font-display font-bold text-2xl text-fg">1</span>
+                <span className="font-mono text-[10.5px] font-semibold tracking-wide uppercase text-muted">Steering hint away</span>
+              </div>
             </div>
           </div>
         </div>
