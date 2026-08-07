@@ -1,7 +1,6 @@
 import hashlib
 # from pathlib import Path
 from uuid import uuid4
-from app.config import settings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.database import (
