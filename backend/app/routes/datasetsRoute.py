@@ -12,11 +12,8 @@ from app.services.database import (
     save_published_snapshot,    
 )
 
-from app.config import settings
-
 router = APIRouter()
 
-UPLOAD_DIR = settings.UPLOAD_DIR
 
 @router.get("/datasets/{dataset_id}/state")
 async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(get_current_user)):
@@ -31,9 +28,8 @@ async def get_state(dataset_id: str, db=Depends(get_db), current_user=Depends(ge
 
     # Reconstruct uploadResult in the same shape the frontend expects
     # so rehydration requires no special casing
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    original_filename = matches[0].name.split("_", 1)[1] if matches else metadata["table_name"]
-
+    original_filename = metadata.get("original_filename") or metadata["table_name"]
+    
     upload_result = {
         "dataset_id": dataset_id,
         "original_filename": original_filename,

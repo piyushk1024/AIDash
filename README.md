@@ -86,10 +86,17 @@ schema width, not dataset size. Validated across multiple datasets:
 
 Dashboard cost as low as $0.002 regardless of row count.
 
+**AST-based SQL validation**
+Every LLM-generated query is parsed to an AST via sqlglot before execution, not
+pattern-matched against a keyword blocklist. The parser enforces a single
+statement, requires the root node to be a `Select` (CTEs included), and walks the
+full tree rejecting any disallowed node type: `Insert`, `Update`, `Delete`, `Drop`,
+`Alter`, `Create`, `TruncateTable`, `Grant`, `Command`. Structural validation, not
+string matching.
+
 **Native SQL generation**
 Raw PostgreSQL generated directly: window functions, CTEs, percentiles, HAVING,
 derived metrics, top-N. No query abstraction layer constraining expressiveness.
-All LLM-generated SQL passes a validation guard before execution.
 
 **Agentic mode with native function-calling**
 An LLM agent orchestrates the full pipeline via native Gemini function-calling,
@@ -121,15 +128,11 @@ Re-running semantic inference with a changed hint marks the downstream plan stal
 via `stale` + `generation_counter`. The `force` flag bypasses the LLM cache without
 triggering staleness. Hint change and forced refresh are handled as distinct cases.
 
-**Profile caching removes CSV dependency**
-Statistical profile persisted to Postgres on first run, across both pipeline and
-agent build paths. All downstream stages read from cache. Foundational step toward
-discarding the CSV post-upload.
-
-**Content-based upload deduplication**
-SHA-256 checksum stored per upload. Per-user unique index on
-`(file_checksum, user_id)` blocks identical content under different filenames.
-409 returns the existing `dataset_id` for client redirect.
+**Zero CSV footprint**
+The uploaded file is read once, loaded straight into Postgres, and discarded, no
+disk write, no database blob. Every downstream stage, both build modes, reads from
+the statistical profile cached in Postgres. Storage cost stays flat regardless of
+upload volume.
 
 **Hand-rolled migration runner**
 ~20-line runner, `schema_versions` table, numbered SQL files applied in order,
@@ -148,14 +151,15 @@ FastAPI dependency injection. Event loop never blocked on the request path.
 **Auth at the database layer**
 `get_dataset_owner` checked on every mutating route: 404 first, 403 on mismatch.
 All access control lives in Dasher's own JWT stack, nothing delegated to a
-rendering layer.
+rendering layer. Verified with a dedicated cross-user access test suite covering
+every dataset-scoped route.
 
 ---
 
 ## What shipped
 
 - JWT auth, per-user ownership, 403 on mismatch across all routes
-- CSV upload: SHA-256 dedup, filename conflict resolution, original filename persisted
+- CSV upload: original filename persisted, file discarded after load, zero storage footprint
 - Statistical profiling cached to Postgres for both build modes
 - LLM semantic inference with confidence scores, force flag, staleness cascade
 - Two-pass dashboard planning with post-planning validation and deduplication
@@ -171,6 +175,9 @@ rendering layer.
 - Full session rehydration from prior pipeline state, mode-aware (pipeline vs agent)
 - OpenTelemetry spans across the LLM pipeline: per-stage cost and latency attribution
 - LLM-agnostic via LiteLLM, provider swap is a one-line config change
+- AST-based SQL validation via sqlglot, structural not pattern-based
+- Downloadable PDF export of agent-built dashboards
+- One-shot launch UI: sidebar dataset picker, per-card workspace grid
 - Validated across 5 structurally distinct datasets including 260K and 220K row CSVs
 
 ---
@@ -203,12 +210,12 @@ rendering layer.
 
 ## Local setup
 
-**Prerequisites:** Python 3.11+, Node.js, Docker Desktop, PostgreSQL on 5432, LLM provider API key
+**Prerequisites:** Python 3.11+, Node.js, Docker Engine, PostgreSQL on 5432, LLM provider API key
 
 ```bash
 git clone <repo>
 cd dasher
-python -m venv env && env\Scripts\activate        # Windows
+python -m venv env && source env/bin/activate
 pip install -r backend/requirements.txt
 # fill in backend/.env (see table below)
 docker compose up                                  # starts Postgres + FastAPI
@@ -220,7 +227,6 @@ npm run dev --prefix frontend
 
 | Variable | Description |
 |----------|-------------|
-| `UPLOAD_DIR` | Path to CSV upload directory |
 | `LLM_API_KEY` | LLM provider API key |
 | `LLM_MODEL` | LiteLLM model string, e.g. `gemini/gemini-3.1-flash-lite` |
 | `DATABASE_URL` | Postgres connection string |
@@ -242,12 +248,12 @@ npm run dev --prefix frontend
 - [x] Agent-exclusive dashboard rationale synthesis
 - [x] Scatter, histogram, and box plot chart types
 - [x] Postman collection: full pipeline chain (upload → semantics → build) with environment-based dataset_id threading
-- [x] CI: ruff, eslint, pytest on push (non-blocking)
-- [ ] AST-based SQL validation (currently pattern-based)
-- [ ] Provider-unavailability (503) surfacing on the standard pipeline build path (agent path already covers this)
-- [ ] Downloadable PDF export of agent-built dashboards
+- [x] CI: ruff, eslint, pytest gating on push
+- [x] AST-based SQL validation via sqlglot
+- [x] Provider-unavailability (503) surfacing across both build paths
+- [x] Downloadable PDF export of agent-built dashboards
+- [x] One-shot launch UI: sidebar dataset picker, per-card workspace grid
 - [ ] LLM-as-judge chart quality evaluation
-- [ ] UI overhaul: one-shot launch card, sidebar dataset picker
 - [ ] LLM evals harness: classification confidence, chart build success rate, plan relevance
-- [ ] Cloud deployment: Railway, S3/R2 for CSV storage
+- [ ] Cloud deployment
 - [ ] MCP server: Dasher pipeline exposed as MCP tools for Claude Desktop and other agents
