@@ -1,7 +1,7 @@
-# app/services/csvLoader.py
 import csv
-from pathlib import Path
 import asyncpg
+import io
+from pathlib import Path
 
 NULL_VALUES = {"", "null", "none", "na", "n/a", "#n/a", "-", "?", "nan"}
 
@@ -67,14 +67,14 @@ def infer_type(values: list[str]) -> str:
 
 async def load_csv_to_postgres(
     pool: asyncpg.Pool,
-    file_path: Path,
+    content: bytes,
     table_name: str,
 ) -> dict:
-    with file_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
-        columns = reader.fieldnames or []
-        columns = [col if col.strip() else f"col_{i}" for i, col in enumerate(columns)]
+    text = content.decode("utf-8-sig")
+    reader = csv.DictReader(io.StringIO(text))
+    rows = list(reader)
+    columns = reader.fieldnames or []
+    columns = [col if col.strip() else f"col_{i}" for i, col in enumerate(columns)]
 
     if not rows:
         raise ValueError("CSV is empty")

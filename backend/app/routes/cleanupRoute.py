@@ -1,11 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from app.dependencies import get_db, require_editor
-from app.config import settings
+
 from app.services.database import get_dataset_metadata, delete_dataset, get_dataset_owner
 
 router = APIRouter()
 
-UPLOAD_DIR = settings.UPLOAD_DIR
 
 @router.delete("/datasets/{dataset_id}")
 async def delete_dataset_by_id(dataset_id: str,
@@ -18,11 +17,6 @@ async def delete_dataset_by_id(dataset_id: str,
     owner = await get_dataset_owner(db, dataset_id)
     if owner != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
-
-    # Delete uploaded CSV file
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    for f in matches:
-        f.unlink(missing_ok=True)
 
     # Delete Postgres table and all metadata rows — dashboard_plans rows
     # (which now hold all built chart results inline as JSONB) are deleted

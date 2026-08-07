@@ -89,10 +89,7 @@ async def generate(prompt: str, stage: str = "unknown") -> str:
         span.set_attribute("model", response.model or settings.LLM_MODEL)
         span.set_attribute("input_tokens", getattr(usage, "prompt_tokens", 0) or 0)
         span.set_attribute("output_tokens", getattr(usage, "completion_tokens", 0) or 0)
-        # if stage == "planner":
-            # print(f"[PLANNER PROMPT]\n{prompt}\n")
-            # print(f"[PLANNER RESPONSE]\n{response.choices[0].message.content.strip()}\n")
-
+        
         return response.choices[0].message.content.strip()
 
 

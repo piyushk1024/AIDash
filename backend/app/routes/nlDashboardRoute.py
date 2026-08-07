@@ -13,11 +13,9 @@ from app.services.profiler import profile_csv
 from app.services.nlChartBuilder import build_chart_from_prompt
 from app.services.cardBuilder import build_card_with_healing
 from app.dependencies import get_db, require_editor
-from app.config import settings
 from app.services.llm import LLMUnavailableError
 
 router = APIRouter()
-UPLOAD_DIR = settings.UPLOAD_DIR
 
 
 class NLChartRequest(BaseModel):
@@ -26,13 +24,10 @@ class NLChartRequest(BaseModel):
     mode: str = "pipeline"
 
 
-async def _fetch_profile_if_needed(dataset_id: str, selected_columns: list[str]) -> dict | None:
+async def _fetch_profile_if_needed(db, table_name: str, dataset_id: str, selected_columns: list[str]) -> dict | None:
     if not selected_columns:
         return None
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found.")
-    return profile_csv(matches[0], dataset_id)
+    return await profile_csv(db, table_name, dataset_id)
 
 
 async def _get_common_deps(db, dataset_id: str, user_id: str, mode: str) -> tuple:
@@ -69,7 +64,7 @@ async def add_nl_chart(
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
+    profile = await _fetch_profile_if_needed(db, table_name, dataset_id, body.selected_columns)
     try:
         chart_spec = await build_chart_from_prompt(
             prompt=body.prompt,
@@ -112,7 +107,7 @@ async def edit_nl_chart(
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = await _fetch_profile_if_needed(dataset_id, body.selected_columns)
+    profile = await _fetch_profile_if_needed(db, table_name, dataset_id, body.selected_columns)
 
     try:
         chart_spec = await build_chart_from_prompt(

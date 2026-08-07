@@ -1,5 +1,5 @@
 import hashlib
-from pathlib import Path
+# from pathlib import Path
 from uuid import uuid4
 from app.config import settings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -8,16 +8,12 @@ from app.services.database import (
     persist_dataset_metadata,
     get_dataset_metadata,
     get_dataset_by_checksum,
-    delete_dataset,
-    get_dataset_owner,
+    delete_dataset,    
     list_datasets_for_user
 )
 from app.dependencies import get_db, require_editor, get_current_user
 
 router = APIRouter()
-
-UPLOAD_DIR = settings.UPLOAD_DIR
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 @router.post("/upload-csv")
@@ -40,53 +36,31 @@ async def upload_csv(
     content = await file.read()
     checksum = hashlib.sha256(content).hexdigest()
 
-    # Filename-based conflict check
-    existing = None
-    for f in UPLOAD_DIR.glob("*.csv"):
-        if f.name.split("_", 1)[-1] == file.filename:
-            candidate_id = f.name.split("_", 1)[0]
-            owner = await get_dataset_owner(db, candidate_id)
-            if owner == current_user.user_id:
-                existing = f
-                break
-
-    if existing and not replace and not force_new:
-        existing_dataset_id = existing.name.split("_", 1)[0]
-        raise HTTPException(
-            status_code=409,
-            detail={"conflict": True, "existing_dataset_id": existing_dataset_id},
-        )
 
     # Checksum-based conflict check — catches identical content under a different filename
+    existing_dataset_id = None
     if not replace and not force_new:
-        duplicate_id = await get_dataset_by_checksum(db, checksum, current_user.user_id)
-        if duplicate_id:
+        existing_dataset_id = await get_dataset_by_checksum(db, checksum, current_user.user_id)
+        if existing_dataset_id:
             raise HTTPException(
                 status_code=409,
                 detail={
                     "conflict": True,
-                    "existing_dataset_id": duplicate_id,
+                    "existing_dataset_id": existing_dataset_id,
                     "reason": "duplicate_content",
                 },
             )
 
-    if existing and replace:
-        existing_dataset_id = existing.name.split("_", 1)[0]
+    if existing_dataset_id and replace:
         metadata = await get_dataset_metadata(db, existing_dataset_id)
         if metadata:
             await delete_dataset(db, existing_dataset_id, metadata["table_name"])
-        existing.unlink(missing_ok=True)
 
     dataset_id = str(uuid4())
-    safe_name = f"{dataset_id}_{Path(file.filename).name}"
-    save_path = UPLOAD_DIR / safe_name
-
-    save_path.write_bytes(content)
-
     table_name = sanitise_table_name(file.filename)
 
     try:
-        load_result = await load_csv_to_postgres(db, save_path, table_name)
+        load_result = await load_csv_to_postgres(db, content, table_name)
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}"

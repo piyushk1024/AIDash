@@ -9,8 +9,7 @@ router = APIRouter()
 
 class RegisterRequest(BaseModel):
     username: str
-    password: str
-    # role: str = "editor"
+    password: str    
 
 class LoginRequest(BaseModel):
     username: str

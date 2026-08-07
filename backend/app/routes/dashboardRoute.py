@@ -16,17 +16,14 @@ from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.profiler import profile_csv
 from app.services.cardBuilder import build_card_with_healing
 from app.services.llm import is_llm_in_cooldown
-from app.config import settings
+
 from app.schemas.chartTypes import CHART_TYPE_VALUES
 from app.services.llm import LLMUnavailableError
-from starlette.concurrency import run_in_threadpool
+
 
 
 
 router = APIRouter()
-
-UPLOAD_DIR = settings.UPLOAD_DIR
-
 # VALID_CHART_TYPES = {"bar", "line", "scalar", "pie"}
 
 
@@ -75,15 +72,14 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
             detail="No semantics found for this dataset. Run inference first.",
         )
 
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found")
-    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)    
-    await persist_profile_json(db, dataset_id, profile)
-
     metadata = await get_dataset_metadata(db, dataset_id)
-    field_map = metadata["field_map"] if metadata else {}
-    table_name = metadata["table_name"] if metadata else ""
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    field_map = metadata["field_map"]
+    table_name = metadata["table_name"]
+
+    profile = await profile_csv(db, table_name, dataset_id)
+    await persist_profile_json(db, dataset_id, profile)
 
     try:
         plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)

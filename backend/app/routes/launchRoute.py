@@ -1,13 +1,11 @@
 import hashlib
 import json
 import logging
-from pathlib import Path
+
 from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from starlette.concurrency import run_in_threadpool
 
-from app.config import settings
 from app.dependencies import get_db, require_editor
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.profiler import profile_csv
@@ -27,7 +25,7 @@ from app.services.database import (
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-UPLOAD_DIR = settings.UPLOAD_DIR
+
 
 DEFAULT_AGENT_GOAL = "Build the most analytically interesting dashboard you can from this dataset."
 
@@ -57,13 +55,10 @@ async def launch_dataset_stream(
     content = await file.read()
     checksum = hashlib.sha256(content).hexdigest()
     dataset_id = str(uuid4())
-    safe_name = f"{dataset_id}_{Path(file.filename).name}"
-    save_path = UPLOAD_DIR / safe_name
-    save_path.write_bytes(content)
 
     table_name = sanitise_table_name(file.filename)
     try:
-        load_result = await load_csv_to_postgres(db, save_path, table_name)
+        load_result = await load_csv_to_postgres(db, content, table_name)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}")
 
@@ -90,8 +85,7 @@ async def launch_dataset_stream(
 
         try:
             if mode == "pipeline":
-                async for event in stream_pipeline(
-                    file_path=save_path,
+                async for event in stream_pipeline(                    
                     dataset_id=dataset_id,
                     table_name=table_name,
                     field_map=field_map,
@@ -113,7 +107,7 @@ async def launch_dataset_stream(
 
             else:  # agent
                 yield _sse_format({"type": "step_started", "phase": "profile"})
-                profile = await run_in_threadpool(profile_csv, save_path, dataset_id)
+                profile = await profile_csv(db, table_name, dataset_id)
                 await persist_profile_json(db, dataset_id, profile)
                 yield _sse_format({"type": "step_done", "phase": "profile", "field_map": field_map})
 

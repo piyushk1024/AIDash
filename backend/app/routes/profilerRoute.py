@@ -1,14 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from app.config import settings
 from app.services.profiler import profile_csv
 from app.dependencies import get_db, require_editor
-from app.services.database import get_dataset_owner, get_cached_profile, persist_profile_json
-from starlette.concurrency import run_in_threadpool
-
+from app.services.database import get_dataset_owner, get_cached_profile, persist_profile_json, get_dataset_metadata
 
 router = APIRouter()
-UPLOAD_DIR = settings.UPLOAD_DIR
-
 
 @router.get("/profile-csv/{dataset_id}")
 async def profile_csv_route(
@@ -26,10 +21,10 @@ async def profile_csv_route(
     if cached:
         return cached
 
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found")
+    metadata = await get_dataset_metadata(db, dataset_id)
+    if not metadata:
+        raise HTTPException(status_code=404, detail="Dataset not found")
 
-    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
+    profile = await profile_csv(db, metadata["table_name"], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
     return profile

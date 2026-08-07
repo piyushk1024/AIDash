@@ -142,8 +142,7 @@ async def publish_dashboard(
                 ],
                 "rationale": plan.get("rationale", ""),
                 "dashboard_title": plan.get("dashboard_title", ""),            
-        }
-        # print(snapshot)
+        }        
         await save_published_snapshot(db, dataset_id, body.mode, snapshot)
 
     await set_published(db, dataset_id, new_state, mode=body.mode if new_state else None)

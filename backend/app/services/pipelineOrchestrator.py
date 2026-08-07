@@ -1,7 +1,7 @@
 import logging
-from pathlib import Path
+# from pathlib import Path
 from typing import AsyncGenerator
-from starlette.concurrency import run_in_threadpool
+# from starlette.concurrency import run_in_threadpool
 from app.services.profiler import profile_csv
 from app.services.llmClient import infer_semantics_with_llm
 from app.services.dashboardPlanner import generate_dashboard_plan
@@ -30,8 +30,7 @@ def _validate_and_clean_charts(charts: list) -> list:
     return cleaned
 
 
-async def stream_pipeline(
-    file_path: Path,
+async def stream_pipeline(    
     dataset_id: str,
     table_name: str,
     field_map: dict,
@@ -48,7 +47,7 @@ async def stream_pipeline(
     """
     # ── Phase 1: profile ──
     yield {"type": "step_started", "phase": "profile"}
-    profile = await run_in_threadpool(profile_csv, file_path, dataset_id)
+    profile = await profile_csv(pool, table_name, dataset_id)
     yield {"type": "step_done", "phase": "profile", "profile": profile}
 
     # ── Phase 2: semantics ──

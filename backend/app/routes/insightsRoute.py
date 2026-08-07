@@ -12,16 +12,11 @@ from app.services.profiler import profile_csv
 from app.services.insightGenerator import generate_insights
 from app.services.queryExecutor import execute_raw_query
 from app.dependencies import get_db, get_current_user
-from app.config import settings
-from starlette.concurrency import run_in_threadpool
 
 router = APIRouter()
-UPLOAD_DIR = settings.UPLOAD_DIR
-
 
 class InsightRequest(BaseModel):
     prompt: str
-
 
 @router.post("/datasets/{dataset_id}/insights")
 async def post_insight(
@@ -37,17 +32,14 @@ async def post_insight(
     if owner != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found.")
-    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
-
     metadata = await get_dataset_metadata(db, dataset_id)
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset metadata not found.")
 
     table_name = metadata["table_name"]
     field_map = metadata["field_map"]
+
+    profile = await profile_csv(db, table_name, dataset_id)
 
     async def execute_sql_fn(sql: str) -> dict:
         return await execute_raw_query(db, sql)

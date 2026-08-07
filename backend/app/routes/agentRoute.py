@@ -19,12 +19,12 @@ from app.services.agentOrchestrator import run_agent, stream_agent
 from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
 from app.dependencies import get_db, get_current_user, require_editor
-from app.config import settings
+
 from starlette.concurrency import run_in_threadpool
 import logging
 
 router = APIRouter()
-UPLOAD_DIR = settings.UPLOAD_DIR
+
 
 
 logger = logging.getLogger(__name__)
@@ -57,11 +57,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset metadata not found.")
 
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found.")
-
-    profile = await run_in_threadpool(profile_csv, matches[0], dataset_id)
+    profile = await profile_csv(db, metadata["table_name"], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
 
     goal = (goal_raw or "").strip() or DEFAULT_GOAL

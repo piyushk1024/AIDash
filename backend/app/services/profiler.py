@@ -1,9 +1,9 @@
-import csv
-from pathlib import Path
 import pandas as pd
+from decimal import Decimal
+
 
 def infer_basic_type(values: list[str]) -> str:
-    
+
     non_empty = [v for v in values if v not in (None, "", "null", "NULL", "NA", "N/A", "na", "n/a")]
     if not non_empty:
         return "string"
@@ -17,7 +17,7 @@ def infer_basic_type(values: list[str]) -> str:
         for v in non_empty:
             int(str(v))
         return "integer"
-    except (ValueError, TypeError): 
+    except (ValueError, TypeError):
         pass
 
     try:
@@ -41,29 +41,30 @@ def _native(v):
         return None
     if isinstance(v, float) and pd.isna(v):
         return None
+    if isinstance(v, Decimal):
+        return float(v)
     if hasattr(v, "item"):
         return v.item()
     return v
 
 
-def profile_csv(file_path: Path, dataset_id: str) -> dict:
-    with file_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+async def profile_csv(pool, table_name: str, dataset_id: str) -> dict:
+    async with pool.acquire() as conn:
+        records = await conn.fetch(f'SELECT * FROM "{table_name}"')
+
+    columns = list(records[0].keys()) if records else []
+    rows = [dict(r) for r in records]
 
     if not rows:
         return {
             "dataset_id": dataset_id,
-            "file_name": file_path.name,
+            "file_name": table_name,
             "row_count": 0,
             "column_count": 0,
             "columns": [],
         }
 
-    columns = reader.fieldnames or []
-
-    # Load into pandas for statistical profiling
-    df = pd.read_csv(file_path, encoding="utf-8-sig")
+    df = pd.DataFrame(rows)
 
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     categorical_cols = [c for c in df.columns if c not in numeric_cols]
@@ -89,7 +90,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
             cleaned = {}
             for num_col, district_vals in group_dict.items():
                 cleaned[num_col] = {
-                    k: _native(v)
+                    _native(k): _native(v)
                     for k, v in district_vals.items()
                 }
             grouped_stats[cat_col] = cleaned
@@ -117,7 +118,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         col_profile = {
             "column_name": col,
             "inferred_type": infer_basic_type(non_null_values[:50]),
-            "sample_values": distinct_values[:5],
+            "sample_values": [_native(v) for v in distinct_values[:5]],
             "null_count": len(values) - len(non_null_values),
             "distinct_count": len(set(non_null_values)),
         }
@@ -149,7 +150,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
 
     return {
         "dataset_id": dataset_id,
-        "file_name": file_path.name,
+        "file_name": table_name,
         "row_count": len(rows),
         "column_count": len(columns),
         "columns": profile_columns,

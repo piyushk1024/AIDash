@@ -1,4 +1,3 @@
-
 from fastapi import APIRouter, HTTPException, Depends, Query
 from app.schemas.semantics import (
     InferSemanticsRequest,
@@ -11,14 +10,12 @@ from app.services.database import (
     get_cached_profile,
     persist_semantics,
     get_dataset_owner,
+    get_dataset_metadata,
     mark_plan_stale,
 )
 from app.services.llmClient import infer_semantics_with_llm
-from app.config import settings
 
 router = APIRouter()
-
-UPLOAD_DIR = settings.UPLOAD_DIR
 
 
 @router.post("/infer-dataset-semantics/{dataset_id}", response_model=InferSemanticsResponse)
@@ -43,13 +40,13 @@ async def infer_dataset_semantics(
     if not should_rerun:
         return InferSemanticsResponse(**cached["semantics_json"])
 
-    # Get profile from cache or compute from file
+    # Get profile from cache or compute from the loaded table
     profile = await get_cached_profile(db, dataset_id)
     if not profile:
-        matched_files = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-        if not matched_files:
-            raise HTTPException(status_code=404, detail="Dataset file not found")
-        profile = profile_csv(matched_files[0], dataset_id=dataset_id)
+        metadata = await get_dataset_metadata(db, dataset_id)
+        if not metadata:
+            raise HTTPException(status_code=404, detail="Dataset not found")
+        profile = await profile_csv(db, metadata["table_name"], dataset_id=dataset_id)
 
     result = await infer_semantics_with_llm(
         dataset_profile=profile, business_hint=payload.business_hint
