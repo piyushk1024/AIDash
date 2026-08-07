@@ -38,14 +38,16 @@ export function useEventStream() {
     const collected = []
 
     try {
-      const headers = { 'Content-Type': 'application/json' }
+      const isFormData = body instanceof FormData
+      const headers = { }
+      if (!isFormData) headers['Content-Type'] = 'application/json'      
       const token = getToken()
       if (token) headers['Authorization'] = `Bearer ${token}`
 
       const res = await fetch(url, {
         method: 'POST',
         headers,
-        body: JSON.stringify(body ?? {}),
+        body: isFormData ? body : JSON.stringify(body ?? {}),
       })
 
       if (!res.ok || !res.body) {

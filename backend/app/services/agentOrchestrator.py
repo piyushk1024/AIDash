@@ -1,15 +1,21 @@
 import json
 import logging
 from typing import AsyncGenerator
-from app.services.llm import generate_with_tools
-from app.services.sqlGuard import validate_sql
-from app.services.cardBuilder import create_card_with_healing
-from app.services.metabaseClient import execute_sql_query, add_card_to_dashboard
+from app.services.llm import generate, generate_with_tools
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
+from app.services.agentDispatch import (
+    dispatch_inspect_data,
+    dispatch_build_and_add_chart,
+    dispatch_edit_existing_chart,
+    dispatch_delete_existing_chart,
+)
 from app.schemas.chartTypes import CHART_TYPE_GUIDANCE
+from app.services.database import json_default
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_EXISTING_ONLY_TOOLS = {"edit_existing_chart", "delete_existing_chart"}
 
 
 def _build_field_reference(field_map: dict, semantics: dict) -> str:
@@ -36,6 +42,20 @@ def _build_profile_summary(profile: dict) -> str:
     return "\n".join(lines)
 
 
+def _build_existing_charts_section(existing_charts: list | None) -> str:
+    if not existing_charts:
+        return ""
+
+    lines = ["\nExisting dashboard (already built — do not duplicate these):"]
+    for c in existing_charts:
+        lines.append(
+            f'  - card_id="{c.get("card_id")}" | "{c.get("chart_title")}" | '
+            f'{c.get("chart_type")} | sql: {c.get("sql")}'
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _build_assistant_message(msg) -> dict:
     """
     Serialises a LiteLLM message object into a plain dict for the conversation history.
@@ -58,116 +78,72 @@ def _build_assistant_message(msg) -> dict:
     return {"role": "assistant", "content": msg.content}
 
 
-def _get_available_tools(inspect_count: int) -> list[dict]:
-    """
-    Returns the tool subset available at the current point in the loop.
-    Once the inspection budget is exhausted, inspect_data is removed —
-    the agent can only build or finish.
-    finish is always available.
-    """
+def _get_available_tools(inspect_count: int, has_existing_charts: bool) -> list[dict]:
+    tools = TOOL_SCHEMAS
     if inspect_count >= settings.AGENT_MAX_INSPECT_CALLS:
-        return [t for t in TOOL_SCHEMAS if t["function"]["name"] != "inspect_data"]
-    return TOOL_SCHEMAS
+        tools = [t for t in tools if t["function"]["name"] != "inspect_data"]
+    if not has_existing_charts:
+        tools = [t for t in tools if t["function"]["name"] not in _EXISTING_ONLY_TOOLS]
+    return tools
 
 
-async def _dispatch_inspect_data(tool_args: dict, execute_sql_fn, step: int) -> tuple[dict, dict]:
-    sql = tool_args["sql"]
-    reasoning = tool_args.get("reasoning", "")
+SYNTHESIS_PROMPT_TEMPLATE = """You just finished building a dashboard for a business user. Produce two things:
+1. A short, professional dashboard title (5-8 words) fit for a report cover page.
+2. An explanation, in plain language, of why the charts you built serve the
+   stated goal. Write for the person who will read this dashboard, not for
+   a developer.
 
-    try:
-        validate_sql(sql, context="agent_inspect")
-    except ValueError:
-        observation = {"error": "SQL validation failed."}
-        trace_entry = {
-            "step": step,
-            "tool": "inspect_data",
-            "reasoning": reasoning,
-            "sql": sql,
-            "observation": observation,
-        }
-        return observation, trace_entry
+DASHBOARD GOAL (may be empty if no goal was set):
+{goal}
 
-    try:
-        result = await execute_sql_fn(sql)
-        result["rows"] = result["rows"][:20]
-        observation = result
-    except Exception as e:
-        logger.error("Agent inspect_data execution failed: %s", e)
-        observation = {"error": "Query execution failed."}
+CHARTS BUILT:
+{charts_summary}
 
-    trace_entry = {
-        "step": step,
-        "tool": "inspect_data",
-        "reasoning": reasoning,
-        "sql": sql,
-        "observation": observation,
-    }
-    return observation, trace_entry
+For the rationale: write one short paragraph (3-5 sentences). Reference
+specific chart titles where it helps. Do not describe the build process,
+tools used, or SQL. Focus only on why this set of charts answers the goal.
+If no goal was set, explain what business questions this set of charts
+collectively answers.
+
+Respond with ONLY a JSON object in this exact shape, no markdown fences,
+no preamble, no text outside the JSON:
+{{"dashboard_title": "...", "rationale": "..."}}
+"""
 
 
-async def _dispatch_build_and_add_chart(
-    tool_args: dict,
-    token: str,
-    http_client,
-    database_id: int,
-    dashboard_id: int,
-    field_map: dict,
-    charts_built: list,
-    step: int,
-) -> tuple[dict, dict, bool]:
-    # Third return value is healed — True if the chart spec was healed before succeeding.
-    chart_spec = {
-        "chart_title": tool_args["chart_title"],
-        "chart_type": tool_args["chart_type"],
-        "sql": tool_args["sql"],
-        "x_alias": tool_args.get("x_alias"),
-        "y_alias": tool_args.get("y_alias"),
-        "series_alias": tool_args.get("series_alias"),
-        "viz_params": tool_args.get("viz_params"),
-    }
-    reasoning = tool_args.get("reasoning", "")
+def _summarize_charts_for_rationale(charts_built: list[dict]) -> str:
+    lines = []
+    for c in charts_built:
+        title = c.get("chart_title", "?")
+        chart_type = c.get("chart_type", "?")
+        lines.append(f'  - "{title}" ({chart_type})')
+    return "\n".join(lines) if lines else "  (no charts were built)"
+
+
+async def generate_dashboard_synthesis(goal: str, charts_built: list[dict], trace: list[dict]) -> dict:
+    """
+    Guaranteed post-loop synthesis step, not agent-callable. Runs once after
+    every agent-mode build/nudge completes. Returns {"dashboard_title": str,
+    "rationale": str}. `trace` is accepted for future use (e.g. referencing
+    a healed chart or a dropped approach) but is not yet used in the prompt.
+
+    Falls back to a generic title (never blank) if the model doesn't return
+    parseable JSON — a bad title shouldn't fail the whole agent run.
+    """
+    prompt = SYNTHESIS_PROMPT_TEMPLATE.format(
+        goal=goal or "(none set)",
+        charts_summary=_summarize_charts_for_rationale(charts_built),
+    )
+    raw = (await generate(prompt, stage="rationale")).strip()
 
     try:
-        validate_sql(chart_spec["sql"], context=chart_spec["chart_title"])
-    except ValueError:
-        observation = {"error": "SQL validation failed."}
-        trace_entry = {
-            "step": step,
-            "tool": "build_and_add_chart",
-            "reasoning": reasoning,
-            "chart_title": chart_spec["chart_title"],
-            "observation": observation,
-        }
-        return observation, trace_entry, False
-
-    result, error = await create_card_with_healing(token, http_client, chart_spec, field_map, database_id)
-
-    healed = bool(result and result.get("healed"))
-
-    if error:
-        logger.error("Agent chart creation failed for '%s': %s", chart_spec["chart_title"], error)
-        observation = {"error": "Chart creation failed after healing attempt."}
-    else:
-        position = len(charts_built)
-        await add_card_to_dashboard(token, http_client, dashboard_id, result["card_id"], position)
-        charts_built.append({**chart_spec, "card_id": result["card_id"]})
-        observation = {
-            "success": True,
-            "card_id": result["card_id"],
-            "chart_title": chart_spec["chart_title"],
-        }
-
-    trace_entry = {
-        "step": step,
-        "tool": "build_and_add_chart",
-        "reasoning": reasoning,
-        "chart_title": chart_spec["chart_title"],
-        "chart_type": chart_spec["chart_type"],
-        "series_alias": chart_spec["series_alias"],
-        "viz_params": chart_spec["viz_params"],
-        "observation": observation,
-    }
-    return observation, trace_entry, healed
+        parsed = json.loads(raw)
+        dashboard_title = (parsed.get("dashboard_title") or "").strip() or "Agent-Built Dashboard"
+        rationale = (parsed.get("rationale") or "").strip()
+        return {"dashboard_title": dashboard_title, "rationale": rationale}
+    except (json.JSONDecodeError, AttributeError):
+        logger.warning("Synthesis step returned non-JSON output — falling back to raw text as rationale")
+        return {"dashboard_title": "Agent-Built Dashboard", "rationale": raw}
 
 
 async def stream_agent(
@@ -176,31 +152,37 @@ async def stream_agent(
     field_map: dict,
     semantics: dict,
     profile: dict,
-    dashboard_id: int,
-    token: str,
-    http_client,
-    database_id: int,
+    pool,
+    existing_charts: list | None = None,
 ) -> AsyncGenerator[dict, None]:
+
+    agent_charts = [c for c in (existing_charts or []) if c.get("source") != "user"]
+    locked_charts = [c for c in (existing_charts or []) if c.get("source") == "user"]
+
     field_reference = _build_field_reference(field_map, semantics)
     profile_summary = _build_profile_summary(profile)
+    existing_charts_section = _build_existing_charts_section(agent_charts )
+    has_existing_charts = bool(existing_charts)
 
     system_content = SYSTEM_PROMPT.format(
         table_name=table_name,
         field_reference=field_reference,
         profile_summary=profile_summary,
+        existing_charts_section=existing_charts_section,
         goal=goal,
         chart_type_guidance=CHART_TYPE_GUIDANCE,
     )
 
     messages = [{"role": "user", "content": system_content}]
-    charts_built = []
+    charts_built = list(existing_charts) if existing_charts else []
     inspect_count = 0
 
     async def execute_sql_fn(sql: str) -> dict:
-        return await execute_sql_query(token, http_client, sql, database_id)
+        from app.services.queryExecutor import execute_raw_query
+        return await execute_raw_query(pool, sql)
 
     for iteration in range(settings.AGENT_MAX_ITERATIONS):
-        available_tools = _get_available_tools(inspect_count)
+        available_tools = _get_available_tools(inspect_count, has_existing_charts)
         msg = await generate_with_tools(messages, available_tools, stage="agent")
         messages.append(_build_assistant_message(msg))
 
@@ -213,7 +195,6 @@ async def stream_agent(
         tool_args = json.loads(tool_call.function.arguments)
         reasoning = tool_args.get("reasoning", "") or tool_args.get("summary", "")
 
-        # Yield before dispatching so the UI shows what the agent decided to do.
         yield {
             "type": "step_started",
             "step": iteration + 1,
@@ -222,78 +203,75 @@ async def stream_agent(
         }
 
         if tool_name == "finish":
-            summary = tool_args.get("summary", "Dashboard complete.")
+            summary = tool_args.get("summary", "Done.")
             observation = {"acknowledged": True}
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": json.dumps(observation),
+                "content": json.dumps(observation, default=json_default),
             })
+
+            synthesis = await generate_dashboard_synthesis(goal, charts_built, [])
+
+            yield {
+                "type": "rationale",
+                "step": iteration + 1,
+                "tool": "finish",
+                "dashboard_title": synthesis["dashboard_title"],
+                "text": synthesis["rationale"],
+            }
             yield {
                 "type": "finish",
                 "step": iteration + 1,
                 "tool": "finish",
                 "reasoning": summary,
                 "observation": observation,
-                "charts_built": charts_built,
+                "charts_built": charts_built + locked_charts,
             }
             break
 
         if tool_name == "inspect_data":
-            observation, trace_entry = await _dispatch_inspect_data(
-                tool_args=tool_args,
-                execute_sql_fn=execute_sql_fn,
-                step=iteration + 1,
+            observation, trace_entry = await dispatch_inspect_data(
+                tool_args=tool_args, execute_sql_fn=execute_sql_fn, step=iteration + 1,
             )
             inspect_count += 1
             yield {"type": "inspect_result", **trace_entry}
 
         elif tool_name == "build_and_add_chart":
-            observation, trace_entry, healed = await _dispatch_build_and_add_chart(
-                tool_args=tool_args,
-                token=token,
-                http_client=http_client,
-                database_id=database_id,
-                dashboard_id=dashboard_id,
-                field_map=field_map,
-                charts_built=charts_built,
-                step=iteration + 1,
+            observation, trace_entry, healed = await dispatch_build_and_add_chart(
+                tool_args=tool_args, pool=pool, field_map=field_map,
+                charts_built=charts_built, step=iteration + 1,
             )
             if healed:
-                yield {
-                    "type": "healing",
-                    "step": iteration + 1,
-                    "chart_title": tool_args.get("chart_title", ""),
-                }
-            if observation.get("success"):
-                yield {
-                    "type": "chart_built",
-                    **trace_entry,
-                    "sql": tool_args["sql"],
-                    "x_alias": tool_args.get("x_alias"),
-                    "y_alias": tool_args.get("y_alias"),
-                    "series_alias": tool_args.get("series_alias"),
-                    "viz_params": tool_args.get("viz_params"),
-                    "card_id": observation["card_id"],
-                    "healed": healed,
-                }
-            else:
-                yield {"type": "chart_failed", **trace_entry}
+                yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
+            yield {"type": "chart_built" if observation.get("success") else "chart_failed", **trace_entry}
+
+        elif tool_name == "edit_existing_chart":
+            observation, trace_entry, healed = await dispatch_edit_existing_chart(
+                tool_args=tool_args, pool=pool, field_map=field_map,
+                charts_built=charts_built, step=iteration + 1,
+            )
+            if healed:
+                yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
+            yield {"type": "chart_edited" if observation.get("success") else "chart_edit_failed", **trace_entry}
+
+        elif tool_name == "delete_existing_chart":
+            observation, trace_entry = await dispatch_delete_existing_chart(
+                tool_args=tool_args, charts_built=charts_built, step=iteration + 1,
+            )
+            yield {"type": "chart_deleted" if observation.get("success") else "chart_delete_failed", **trace_entry}
 
         else:
             observation = {"error": f"Unknown tool: {tool_name}"}
             trace_entry = {
-                "step": iteration + 1,
-                "tool": tool_name,
-                "reasoning": "",
-                "observation": observation,
+                "step": iteration + 1, "tool": tool_name, "reasoning": "", "observation": observation,
             }
             yield {"type": "phase_error", **trace_entry}
 
         messages.append({
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": json.dumps(observation),
+            "content": json.dumps(observation, default=json_default),
         })
 
 
@@ -303,10 +281,8 @@ async def run_agent(
     field_map: dict,
     semantics: dict,
     profile: dict,
-    dashboard_id: int,
-    token: str,
-    http_client,
-    database_id: int,
+    pool,
+    existing_charts: list | None = None,
 ) -> dict:
     """
     Wrapper around stream_agent for the existing synchronous route.
@@ -314,6 +290,8 @@ async def run_agent(
     """
     charts_built = []
     trace = []
+    rationale = ""
+    dashboard_title = ""
 
     async for event in stream_agent(
         goal=goal,
@@ -321,18 +299,19 @@ async def run_agent(
         field_map=field_map,
         semantics=semantics,
         profile=profile,
-        dashboard_id=dashboard_id,
-        token=token,
-        http_client=http_client,
-        database_id=database_id,
+        pool=pool,
+        existing_charts=existing_charts,
     ):
         event_type = event["type"]
 
         if event_type == "finish":
-            # charts_built is tracked inside stream_agent and included in finish
             charts_built = event.get("charts_built", [])
 
-        # Collect trace entries — skip UI-only events that have no trace value
+        if event_type == "rationale":
+            rationale = event.get("text", "")
+            dashboard_title = event.get("dashboard_title", "")
+            continue
+
         if event_type not in ("step_started", "healing"):
             trace_entry = {k: v for k, v in event.items() if k not in ("type", "charts_built")}
             trace.append(trace_entry)
@@ -340,5 +319,6 @@ async def run_agent(
     return {
         "charts_built": charts_built,
         "trace": trace,
-        "dashboard_id": dashboard_id,
+        "rationale": rationale,
+        "dashboard_title": dashboard_title,
     }

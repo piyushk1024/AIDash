@@ -30,9 +30,7 @@ export default function HealingSummary({ cards, errors }) {
                 <span className="text-neutral-400">{c.chart_title}</span>
               </div>
               <div className="font-mono text-xs text-neutral-600 pl-4">
-                {c.original_chart.aggregation}({c.original_chart.y_axis ?? c.original_chart.x_axis})
-                <span className="text-neutral-700"> → </span>
-                {c.healed_chart.aggregation}({c.healed_chart.y_axis ?? c.healed_chart.x_axis})
+                {c.original_chart.chart_type} <span className="text-neutral-700">→</span> {c.healed_chart.chart_type}
               </div>
               {c.healed_chart.reasoning && (
                 <div className="font-mono text-xs text-neutral-500 pl-4 leading-relaxed">
@@ -50,13 +48,10 @@ export default function HealingSummary({ cards, errors }) {
                 <span className="text-red-400/50 ml-auto">discarded</span>
               </div>
               <div className="font-mono text-xs text-neutral-600 pl-4">
-                {e.chart_type} · {e.aggregation}
-                {e.y_axis && ` · avg on ${e.y_axis}`}
-                {e.x_axis && ` · by ${e.x_axis}`}
+                {e.chart_type}
               </div>
-              <div className="font-mono text-xs text-red-400/60 pl-4">{e.heal_error}</div>
               <div className="font-mono text-xs text-neutral-600 pl-4 leading-relaxed">
-                To fix: ensure this column contains only numeric values in your CSV and re-upload.
+                Healing could not produce a working chart for this one. Check that the underlying columns contain the data type this chart expects, and re-upload if needed.
               </div>
             </div>
           ))}

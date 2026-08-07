@@ -1,6 +1,45 @@
 @import "tailwindcss";
 
 @variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-bg: #F3EEE3;
+  --color-surface: #FFFFFF;
+  --color-fg: #171310;
+  --color-muted: #6E6558;
+  --color-accent: #0042CC;
+  --color-accent-fg: #FFFFFF;
+  --color-accent-wash-strong: #C9DFFF;
+  --color-accent-wash-soft: #E5EFFF;
+  --color-danger: #C21725;
+  --color-warning: #B66E00;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --radius-icon: 6px;
+}
+
+/* Dark-mode overrides — declared directly on .dark so they take effect
+   where the class actually lives. The previous version routed through a
+   --dasher-* indirection whose var() substitution got fixed at :root
+   (<html>, which never carries .dark since the class sits on a nested
+   div) — so overriding --dasher-* inside .dark never reached --color-*. */
+.dark {
+  --color-bg: #171310;
+  --color-surface: #211C16;
+  --color-fg: #F3EEE3;
+  --color-muted: #9C9282;
+  --color-accent: #FAC131;
+  --color-accent-fg: #171310;
+  --color-accent-wash-strong: #22375E;
+  --color-accent-wash-soft: #1F293A;
+  --color-danger: #E64343;
+  --color-warning: #EAB532;
+}
+
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }

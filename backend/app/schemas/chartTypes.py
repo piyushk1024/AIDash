@@ -25,6 +25,8 @@ class ChartType(str, Enum):
     WATERFALL = "waterfall"
     PIVOT = "pivot"
     MAP = "map"
+    HISTOGRAM = "histogram"
+    BOX = "box"
 
 
 # ── Tier A — structured params ───────────────────────────────
@@ -50,8 +52,18 @@ MEASURE_PAIR_TYPES = {ChartType.SCATTER}
 # Types that additionally accept an optional second breakout dimension
 # for grouped/stacked rendering (graph.dimensions gets a second entry).
 SERIES_CAPABLE_TYPES = {ChartType.BAR, ChartType.ROW}
+# Single raw numeric column, one row per record — not GROUP BY reduced.
+# Plotly bins the values into a distribution client-side.
+HISTOGRAM_TYPES = {ChartType.HISTOGRAM}
 
-TIER_A_TYPES = SCALAR_TYPES | NO_VIZ_SETTINGS_TYPES | DIMENSION_MEASURE_TYPES | MEASURE_PAIR_TYPES
+# Single raw measure column (y_alias), optionally paired with a raw
+# categorical column (x_alias) for one box per category. Not GROUP BY
+# reduced — Plotly computes quartiles/outliers itself from the raw
+# x/y arrays; repeated x values group into one box automatically.
+DISTRIBUTION_TYPES = {ChartType.BOX}
+
+TIER_A_TYPES = (SCALAR_TYPES | NO_VIZ_SETTINGS_TYPES | DIMENSION_MEASURE_TYPES | MEASURE_PAIR_TYPES | HISTOGRAM_TYPES | DISTRIBUTION_TYPES)
+
 
 
 # ── Tier B — generic passthrough ─────────────────────────────
@@ -89,4 +101,15 @@ CHART_TYPE_GUIDANCE = """- scalar: query returns exactly one row, one column. No
   via your own SQL — e.g. for gauge, compute percentile or threshold
   bands with a query, then supply them as segments; for pivot, decide
   which columns are rows vs. columns vs. values. Dasher does not compute
-  these for you and will not second-guess reasonable values you provide."""
+  these for you and will not second-guess reasonable values you provide.
+- histogram: one raw numeric column, one row per record — do not GROUP BY,
+  return the column directly, aliased as x_alias. Use to show the
+  distribution/shape of a single measure (e.g. order value spread).
+  Plotly bins client-side, so it doesn't need pre-aggregation. Add a
+  reasonable LIMIT (e.g. 5000) if the table is large.
+- box: one raw numeric column (y_alias), one row per record, optionally
+  paired with a raw categorical column (x_alias) for one box per
+  category. Do not GROUP BY or pre-compute percentiles — Plotly derives
+  quartiles and outliers itself from the raw values. Add a LIMIT if the
+  table is large, same as histogram.
+"""

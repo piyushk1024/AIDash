@@ -18,3 +18,4 @@ git_history.txt
 backend/app/uploads/
 dataset/
 .~lock.*
+backend/logs/

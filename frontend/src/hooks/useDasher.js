@@ -1,12 +1,6 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 
-// Each step has a status. This drives what the UI shows.
-// idle    → not started yet
-// loading → request in flight
-// done    → completed successfully
-// error   → something went wrong
-
 const initialStatus = {
   upload: "idle",
   semantics: "idle",
@@ -15,42 +9,34 @@ const initialStatus = {
 };
 
 export function useDasher() {
-  // Core pipeline data — gets filled in step by step
   const [datasetId, setDatasetId] = useState(null);
   const [uploadResult, setUploadResult] = useState(null);
   const [semantics, setSemantics] = useState(null);
   const [plan, setPlan] = useState(null);
+  const [pipelinePlan, setPipelinePlan] = useState(null);
+  const [agentPlan, setAgentPlan] = useState(null);
   const [dashboardResult, setDashboardResult] = useState(null);
-  
-  const [conflict, setConflict] = useState(null); // { existing_dataset_id }
+  const [agentResult, setAgentResult] = useState(null);
+  const [pipelineHint, setPipelineHint] = useState("");
+  const [activeMode, setActiveMode] = useState("pipeline");
 
-  // Per-step status and error messages
+  const [conflict, setConflict] = useState(null);
   const [status, setStatus] = useState(initialStatus);
   const [errors, setErrors] = useState({});
-  // Agentic persistance
-  const [agentResult, setAgentResult] = useState(null)
 
-  // Helper — update one step's status without touching the others.
-  // The ...prev spread means "keep everything else the same"
   const setStepStatus = (step, value) =>
     setStatus((prev) => ({ ...prev, [step]: value }));
-
   const setStepError = (step, message) =>
     setErrors((prev) => ({ ...prev, [step]: message }));
 
   // ── Step 1: Upload ──────────────────────────────────────────
-
   async function upload(file, replace = false, forceNew = false) {
     setStepStatus("upload", "loading");
     setStepError("upload", null);
     try {
       const result = await api.uploadCsv(file, replace, forceNew);
       if (result.conflict) {
-        setConflict({
-          file,
-          // businessHint,
-          existing_dataset_id: result.existing_dataset_id,
-        });
+        setConflict({ file, existing_dataset_id: result.existing_dataset_id });
         setStepStatus("upload", "idle");
         return;
       }
@@ -79,9 +65,15 @@ export function useDasher() {
     if (!datasetId) return;
     setStepStatus("semantics", "loading");
     setStepError("semantics", null);
+    // Downstream steps are stale the moment semantics change — clear them
+    // so the sidebar doesn't show a rebuild's leftover "done" from before
+    // this round has actually re-run those steps.
+    setStepStatus("plan", "idle");
+    setStepStatus("dashboard", "idle");
     try {
       const result = await api.inferSemantics(datasetId, businessHint);
       setSemantics(result);
+      setPipelineHint(businessHint || "");
       setStepStatus("semantics", "done");
     } catch (e) {
       setStepStatus("semantics", "error");
@@ -89,14 +81,16 @@ export function useDasher() {
     }
   }
 
-  // ── Step 3: Dashboard Plan ──────────────────────────────────
+  // ── Step 3: Dashboard Plan (pipeline mode) ──────────────────
   async function generatePlan() {
     if (!datasetId) return;
     setStepStatus("plan", "loading");
     setStepError("plan", null);
+    setStepStatus("dashboard", "idle");
     try {
       const result = await api.generatePlan(datasetId);
       setPlan(result);
+      setPipelinePlan(result);
       setStepStatus("plan", "done");
     } catch (e) {
       setStepStatus("plan", "error");
@@ -104,118 +98,214 @@ export function useDasher() {
     }
   }
 
-  // ── Step 4: Create Metabase Dashboard ──────────────────────
+  // ── Step 4: Build dashboard (pipeline mode) ─────────────────
   async function createDashboard() {
     if (!datasetId) return;
     setStepStatus("dashboard", "loading");
     setStepError("dashboard", null);
     try {
-      const result = await api.createDashboard(datasetId);
+      const result = await api.buildDashboard(datasetId);
       setDashboardResult(result);
-      setAgentResult(null);
+      setActiveMode("pipeline");
       setStepStatus("dashboard", "done");
+      await rehydrate(datasetId); // reconciles published/stale from the authoritative backend state
     } catch (e) {
       setStepStatus("dashboard", "error");
       setStepError("dashboard", e.message);
     }
   }
+// ── One-shot launch: apply a finished /datasets/launch/stream run ──
+  // Component owns useEventStream and calls startStream itself with a
+  // FormData body; once the stream ends it hands the full collected
+  // array + mode here. Mirrors rehydrate()'s end state so downstream
+  // steps (semantics/plan/dashboard) read the same way post-launch.
+  function applyLaunchEvents(events, mode, launchMeta) {
+    const createdEvent = events.find(e => e.type === "dataset_created");
+    if (createdEvent) {
+      setDatasetId(createdEvent.dataset_id);
+      setStepStatus("upload", "done");
+    }
 
-  // Get prior states of datasets
-async function rehydrate(id) {
+    const profileDone = events.find(e => e.type === "step_done" && e.phase === "profile");
+    if (profileDone || launchMeta) {
+      setUploadResult(prev => ({
+        ...(prev ?? {}),
+        ...(launchMeta ?? {}),
+        profile: profileDone?.profile,
+        field_map: profileDone?.field_map ?? prev?.field_map,
+      }));
+    }
+
+    const semanticsDone = events.find(e => e.type === "step_done" && e.phase === "semantics");
+    if (semanticsDone) {
+      setSemantics(semanticsDone.semantics);
+      setStepStatus("semantics", "done");
+    }
+
+    const errorEvent = events.find(e => e.type === "phase_error");
+    if (errorEvent) {
+      setStepStatus(errorEvent.phase ?? "dashboard", "error");
+      setStepError(errorEvent.phase ?? "dashboard", errorEvent.error);
+      return;
+    }
+
+    if (mode === "pipeline") {
+      const planDone = events.find(e => e.type === "step_done" && e.phase === "plan");
+      if (planDone) {
+        setPlan(planDone.plan);
+        setPipelinePlan(planDone.plan);
+        setStepStatus("plan", "done");
+      }
+      const finishEvent = events.find(e => e.type === "finish");
+      if (finishEvent) {
+        setDashboardResult({
+          cards: finishEvent.charts_built,
+          cards_created: finishEvent.charts_built.length,
+          errors: finishEvent.errors,
+        });
+        setActiveMode("pipeline");
+        setStepStatus("dashboard", "done");
+      }
+    } else {
+      applyAgentEvents(events, false, null, createdEvent?.dataset_id);
+    }
+  }
+
+  
+  // ── Agent mode: apply a finished SSE run's collected events ──
+  // Component owns useEventStream and calls startStream itself;
+  // once the stream ends it hands the full collected array here.
+  // rationale event is pulled out explicitly, everything else is trace.
+  function applyAgentEvents(events, isNudge = false, goal = null, idOverride = null) {
+    const id = idOverride ?? datasetId;
+    const finishEvent = events.find(e => e.type === "finish");
+    const rationaleEvent = events.find(e => e.type === "rationale");
+    const newTrace = events.filter(e => !["step_started", "healing", "rationale", "finish"].includes(e.type));
+
+    setAgentResult(prev => ({
+      published: false,
+      charts_built: finishEvent?.charts_built ?? [],
+      trace: isNudge ? [...(prev?.trace ?? []), ...newTrace] : newTrace,
+      rationale: rationaleEvent?.text ?? (isNudge ? prev?.rationale ?? "" : ""),
+      dashboard_title: rationaleEvent?.dashboard_title ?? (isNudge ? prev?.dashboard_title ?? "" : ""),
+      goal: goal ?? (isNudge ? prev?.goal ?? "" : ""),
+    }));
+
+    
+    setActiveMode("agent");
+    setStepStatus("dashboard", "done");
+    rehydrate(id); // reconciles published/stale from the authoritative backend state
+  }
+
+  // ── Rehydrate from /state ───────────────────────────────────
+  async function rehydrate(id) {
   try {
     const state = await api.getDatasetState(id);
     const {
       upload_result,
       semantics: sem,
-      plan: pl,
+      pipeline_plan,
+      agent_plan,
       dashboard_result,
       agent_result,
+      last_active_mode,
+      business_hint,
     } = state;
 
     setDatasetId(id);
     setUploadResult(upload_result);
     setSemantics(sem);
-    setPlan(pl);
+    setPipelinePlan(pipeline_plan);
+    setAgentPlan(agent_plan);
+    setPlan(pipeline_plan);
+    setPipelineHint(business_hint || "");
 
-    // Only one of these will be non-null — set the correct one, clear the other.
-    if (agent_result) {
-      setAgentResult(agent_result);
-      setDashboardResult(null);
-    } else {
-      setDashboardResult(dashboard_result);
-      setAgentResult(null);
-    }
+    setDashboardResult(dashboard_result);
+    setAgentResult(agent_result);
+    setActiveMode(last_active_mode === "agent" ? "agent" : "pipeline");
 
     setStatus({
-      upload:    upload_result                       ? "done" : "idle",
-      semantics: sem                                 ? "done" : "idle",
-      plan:      pl                                  ? "done" : "idle",
-      dashboard: (agent_result || dashboard_result)  ? "done" : "idle",
+      upload:    upload_result ? "done" : "idle",
+      semantics: sem ? "done" : "idle",
+      plan:      pipeline_plan ? "done" : "idle",
+      dashboard: (agent_result || dashboard_result) ? "done" : "idle",
     });
-  } catch (e) {
-    // If state fetch fails, just start fresh — don't block the user
-    console.error("Rehydrate failed:", e.message);
-  }
-}
+    return true;
+      } catch (e) {
+        console.error("Rehydrate failed:", e.message);
+        return false;
+      }
+    }
 
   function reset() {
     setDatasetId(null);
     setUploadResult(null);
     setSemantics(null);
     setPlan(null);
+    setPipelinePlan(null);
+    setAgentPlan(null);
     setDashboardResult(null);
+    setAgentResult(null);
+    setPipelineHint("");
+    setActiveMode("pipeline");
     setStatus(initialStatus);
-    setAgentResult(null)
     setErrors({});
   }
-  //------------ Card Creation bits-------
+
+  // ── Card mutation helpers (NL add/edit/delete) ──────────────
   function addCard(card) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: [...(prev.cards ?? []), card],
-    cards_created: (prev.cards_created ?? 0) + 1,
-  }))
-}
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: [...(prev.cards ?? []), card],
+      cards_created: (prev.cards_created ?? 0) + 1,
+    }));
+    rehydrate(datasetId);
+  }
 
-function replaceCard(cardId, card) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
-  }))
-}
+  function replaceCard(cardId, card) {
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: (prev.cards ?? []).map(c => c.card_id === cardId ? card : c),
+    }));
+    rehydrate(datasetId);
+  }
 
-function removeCard(cardId) {
-  setDashboardResult(prev => ({
-    ...prev,
-    cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
-    cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
-  }))
-}
-function setDashboardPublished(value) {
-  setDashboardResult(prev => ({ ...prev, published: value }))
-}
-function clearDashboardResult() {
-  setDashboardResult(null);
-}
+  function removeCard(cardId) {
+    setDashboardResult(prev => ({
+      ...prev,
+      cards: (prev.cards ?? []).filter(c => c.card_id !== cardId),
+      cards_created: Math.max(0, (prev.cards_created ?? 0) - 1),
+    }));
+    rehydrate(datasetId);
+  }
 
-  // Everything a component might need, returned as one object
+  function setDashboardPublished(value) {
+    setDashboardResult(prev => ({ ...prev, published: value }));
+  }
+
+  function clearDashboardResult() {
+    setDashboardResult(null);
+  }
+
   return {
-    // Data
     datasetId,
     uploadResult,
     semantics,
     plan,
+    pipelinePlan,
+    agentPlan,
     dashboardResult,
     agentResult,
+    pipelineHint,
     conflict,
-    // Status per step
     status,
     errors,
-    // Actions
     upload,
     inferSemantics,
     generatePlan,
     createDashboard,
+    applyLaunchEvents,
+    applyAgentEvents,    
     rehydrate,
     resolveConflict,
     reset,
@@ -224,6 +314,7 @@ function clearDashboardResult() {
     removeCard,
     setDashboardPublished,
     setAgentResult,
-    clearDashboardResult
+    clearDashboardResult,
+    activeMode
   };
 }

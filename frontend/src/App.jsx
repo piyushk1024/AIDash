@@ -1,93 +1,144 @@
-import { useState, useEffect, useRef } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { Routes, Route, Navigate, useNavigate, useParams, useLocation } from 'react-router'
 import { useAuth } from './hooks/useAuth'
 import { useDasher } from './hooks/useDasher'
 import { api } from './lib/api'
-import UploadStep from './components/steps/UploadStep'
-import SemanticsStep from './components/steps/SemanticsStep'
-import PlanStep from './components/steps/PlanStep'
-import DashboardStep from './components/steps/DashboardStep'
 import AuthPage from './components/AuthPage'
 import SharePage from './components/sharepage'
+import LaunchCard from './components/steps/LaunchCard'
+import Workspace from './components/steps/Workspace'
+import { useTheme } from './hooks/useTheme'
+import Toast, { ToastProvider } from './components/steps/Toast'
+import Modal from './components/Modal'
+import AdminPage from './components/AdminPage'
+import FeedbackFab from './components/steps/FeedbackFab'
 
-const STEPS = [
-  { key: 'upload',    number: '01', label: 'Upload Dataset' },
-  { key: 'semantics', number: '02', label: 'Infer Semantics' },
-  { key: 'plan',      number: '03', label: 'Generate Plan' },
-  { key: 'dashboard', number: '04', label: 'Build Dashboard' },
-]
-
-function Header({ phase, onGoHome, user, onLogout, dark, onToggleDark }) {
+function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
+  const navigate = useNavigate()
   return (
-    <header className="border-b border-neutral-200 dark:border-neutral-800 px-8 py-4 flex items-center justify-between sticky top-0 bg-white dark:bg-neutral-950 z-10">
+    <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
       <div className="flex items-center gap-3">
-        <div className="w-5 h-5 bg-amber-400 rounded-sm rotate-45 shrink-0" />
-        <span className="font-mono text-sm tracking-widest uppercase text-neutral-500 dark:text-neutral-400">
+        <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
+        <span className="font-display font-medium text-[18px] tracking-wide uppercase text-fg">
           Dasher
         </span>
       </div>
       <div className="flex items-center gap-4">
-        {phase === 'wizard' && (
+        {showHome && (
           <button
             onClick={onGoHome}
-            className="flex items-center gap-1.5 font-mono text-xs text-neutral-400 hover:text-amber-400 transition-colors tracking-wider uppercase group"
+            className="flex items-center gap-1.5 font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase group"
           >
             <span className="group-hover:-translate-x-0.5 transition-transform duration-150">←</span>
             <span>Home</span>
           </button>
         )}
-        <span className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+        {user?.role === 'admin' && (
+          <button
+            onClick={() => navigate('/admin')}
+            className="font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase"
+          >
+            Admin
+          </button>
+        )}
+        <span className="font-mono text-xs text-muted">
           {user?.username}
         </span>
         <button
           onClick={onLogout}
-          className="font-mono text-xs text-neutral-500 hover:text-amber-400 transition-colors tracking-wider uppercase"
+          className="font-mono text-xs text-muted hover:text-accent transition-colors tracking-wider uppercase"
         >
           Sign out
         </button>
-        <button
+        {/* <button
           onClick={() => onToggleDark()}
-          className="w-8 h-8 flex items-center justify-center rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-icon border border-muted hover:border-accent transition-colors"
           title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          <span className="text-neutral-400 text-xs">{dark ? '☀' : '☾'}</span>
-        </button>
+          <span className="text-muted text-xs">{dark ? '☀' : '☾'}</span>
+        </button> */}
+        <div
+          onClick={onToggleDark}
+          className="flex items-center gap-2.5 cursor-pointer select-none"
+        >
+          <span className={`font-mono text-[11px] font-medium tracking-wide transition-opacity ${dark ? 'opacity-40' : 'opacity-100'} text-muted`}>
+            LIGHT
+          </span>
+          <div className="w-10 h-[22px] rounded-full border border-muted bg-bg relative box-border">
+            <div
+              className={`w-4 h-4 rounded-full bg-accent absolute top-[2px] transition-all duration-150 ${dark ? 'left-[21px]' : 'left-[2px]'}`}
+            />
+          </div>
+          <span className={`font-mono text-[11px] font-medium tracking-wide transition-opacity ${dark ? 'opacity-100' : 'opacity-40'} text-muted`}>
+            DARK
+          </span>
+        </div>
       </div>
     </header>
   )
 }
 
+function AdminGate() {
+  const auth = useAuth()
+  const [dark] = useTheme()
+
+  if (!auth.isAuthenticated) return <Navigate to="/login" replace />
+  if (auth.user?.role !== 'admin') return <Navigate to="/" replace />
+
+  return (
+    <div className={dark ? 'dark' : ''}>
+      <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
+        <Header
+          showHome
+          onGoHome={() => window.location.href = '/'}
+          user={auth.user}
+          onLogout={auth.logout}
+          dark={dark}
+          onToggleDark={() => {}}
+        />
+        <AdminPage />
+      </div>
+    </div>
+  )
+}
+
+
 export default function App() {
   return (
+    <ToastProvider>
+    <Toast />
     <Routes>
       <Route path="/login" element={<AuthPage />} />
       <Route path="/share/:datasetId" element={<SharePage />} />
-      <Route path="/*"     element={<DasherApp />} />
+      <Route path="/admin" element={<AdminGate />} />
+      <Route path="/" element={<DasherApp />} />
+      <Route path="/launch" element={<DasherApp />} />
+      <Route path="/d/:datasetId" element={<DasherApp />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </ToastProvider>
   )
 }
 
 function DasherApp() {
   const auth = useAuth()
-  const [dark, setDark] = useState(true)
-  const [phase, setPhase] = useState('pick')
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { datasetId: routeDatasetId } = useParams()
+  const [dark, setDark] = useTheme()
   const [datasets, setDatasets] = useState([])
   const [picking, setPicking] = useState(true)
-
+  // const [hydrating, setHydrating] = useState(false)
+  
   const dasher = useDasher()
-  const { status, rehydrate, dashboardResult } = dasher
+  const { rehydrate } = dasher
 
-  const activeStep = STEPS.find(s => status[s.key] !== 'done')?.key ?? 'upload'
-  const [expandedSteps, setExpandedSteps] = useState(new Set())
+  const hydrating = Boolean(routeDatasetId) && auth.isAuthenticated && dasher.datasetId !== routeDatasetId
 
-  const dashboardDone = status.dashboard === 'done' && dashboardResult
-  const dashboardRef = useRef(null)
+  const isLaunchRoute = location.pathname === '/launch'
+  const isWorkspaceRoute = Boolean(routeDatasetId)
+  const [pendingDeleteId, setPendingDeleteId] = useState(null)
 
-  useEffect(() => {
-    if (dashboardDone && dashboardRef.current) {
-      dashboardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }
-  }, [dashboardDone])
 
   useEffect(() => {
     if (!auth.isAuthenticated) return
@@ -97,94 +148,124 @@ function DasherApp() {
       .finally(() => setPicking(false))
   }, [auth.isAuthenticated])
 
-  // Redirect to login if not authenticated — also fires after logout
+  // Rehydrate whenever the route names a dataset the client doesn't already
+  // have loaded — covers a hard refresh on /d/:id, and direct navigation
+  // (e.g. a bookmarked link). Redirects home if the id turns out to be bad.
+  useEffect(() => {
+    if (!auth.isAuthenticated || !routeDatasetId) return
+    if (dasher.datasetId === routeDatasetId) return
+    // rehydrate(routeDatasetId).
+    rehydrate(routeDatasetId).then(ok => {      
+      if (!ok) navigate('/', { replace: true })
+    })
+  }, [auth.isAuthenticated, routeDatasetId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!auth.isAuthenticated) return <Navigate to="/login" replace />
 
-  function toggleExpanded(key) {
-    setExpandedSteps(prev => {
-      const next = new Set(prev)
-      next.has(key) ? next.delete(key) : next.add(key)
-      return next
-    })
-  }
-
-  async function handlePickDataset(datasetId) {
-    setPicking(true)
-    await rehydrate(datasetId)
-    setPicking(false)
-    setPhase('wizard')
+  function handlePickDataset(datasetId) {
+    navigate(`/d/${datasetId}`)
   }
 
   function handleStartFresh() {
     dasher.reset()
-    setPhase('wizard')
+    navigate('/launch')
   }
 
   async function handleDeleteDataset(datasetId) {
     await api.deleteDataset(datasetId)
     setDatasets(prev => prev.filter(d => d.dataset_id !== datasetId))
+    setPendingDeleteId(null)
   }
 
   function handleGoHome() {
     api.listDatasets()
       .then(res => setDatasets(res.datasets ?? []))
       .catch(() => {})
-    setPhase('pick')
+    dasher.reset()
+    navigate('/')
   }
 
-  if (phase === 'pick') {
+  async function handleLaunchDone(datasetId) {
+    const res = await api.listDatasets().catch(() => null)
+    if (res) setDatasets(res.datasets ?? [])
+    if (datasetId) navigate(`/d/${datasetId}`)
+  }
+
+  const showHome = isLaunchRoute || isWorkspaceRoute
+
+  if (!isLaunchRoute && !isWorkspaceRoute) {
     return (
       <div className={dark ? 'dark' : ''}>
-        <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
+        <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
           <Header
-            phase={phase}
+            showHome={showHome}
             onGoHome={handleGoHome}
             user={auth.user}
             onLogout={auth.logout}
             dark={dark}
             onToggleDark={() => setDark(d => !d)}
           />
+          <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
           <div className="max-w-xl mx-auto px-8 py-16">
-            <h1 className="font-mono text-xs tracking-widest uppercase text-neutral-400 mb-1">
+            <h1 className="font-mono text-[10.5px] tracking-wider uppercase text-muted mb-1">
               AI-Enabled Dashboarding
             </h1>
-            <p className="font-mono text-2xl text-neutral-900 dark:text-neutral-100 mb-10">
+            <p className="font-display font-semibold text-2xl text-fg mb-10">
               Continue a dataset or start fresh
             </p>
             {picking ? (
-              <p className="font-mono text-xs text-neutral-500 animate-pulse">Loading datasets...</p>
+              <p className="font-mono text-xs text-muted animate-pulse">Loading datasets...</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {datasets.length === 0 && (
-                  <p className="font-mono text-xs text-neutral-600 mb-2">No datasets yet.</p>
+                  <p className="font-mono text-xs text-muted mb-2">No datasets yet.</p>
                 )}
                 {datasets.map(ds => (
                   <div key={ds.dataset_id} className="flex items-center gap-2">
                     <button
                       onClick={() => handlePickDataset(ds.dataset_id)}
-                      className="flex-1 text-left px-4 py-3 rounded border border-neutral-200 dark:border-neutral-800 hover:border-amber-400 dark:hover:border-amber-400 hover:bg-amber-400/5 font-mono text-sm transition-all duration-150"
+                      className="flex-1 text-left px-4 py-3 rounded-card border border-muted hover:border-accent hover:bg-accent-wash-soft font-mono text-sm transition-all duration-150"
                     >
-                      <span className="text-neutral-900 dark:text-neutral-100">{ds.original_filename}</span>
-                      <span className="ml-3 text-xs text-neutral-400">{ds.dataset_id.slice(0, 8)}</span>
+                      <span className="text-fg">{ds.name || ds.original_filename}</span>
+                      <span className="ml-3 text-xs text-muted">{ds.dataset_id.slice(0, 8)}</span>
                     </button>
                     <button
-                      onClick={() => handleDeleteDataset(ds.dataset_id)}
+                      // onClick={() => handleDeleteDataset(ds.dataset_id)}
+                      onClick={() => setPendingDeleteId(ds.dataset_id)}
                       title="Delete dataset"
-                      className="w-9 h-9 flex items-center justify-center rounded border border-transparent hover:border-red-500/40 hover:text-red-400 font-mono text-xs text-neutral-500 transition-all duration-150"
+                      className="w-9 h-9 flex items-center justify-center rounded-icon border border-transparent hover:border-danger/40 hover:text-danger font-mono text-xs text-muted transition-all duration-150"
                     >
-                      ✕
+                      🗑
                     </button>
                   </div>
                 ))}
                 <button
                   onClick={handleStartFresh}
-                  className="mt-4 text-left px-4 py-3 rounded border border-dashed border-neutral-300 dark:border-neutral-700 hover:border-amber-400 dark:hover:border-amber-400 hover:bg-amber-400/5 font-mono text-sm text-neutral-400 hover:text-amber-400 transition-all duration-150"
+                  className="mt-4 text-left px-4 py-3 rounded-card border border-dashed border-muted hover:border-accent hover:bg-accent-wash-soft font-mono text-sm text-muted hover:text-accent transition-all duration-150"
                 >
                   + Start fresh
                 </button>
               </div>
             )}
           </div>
+          <Modal open={Boolean(pendingDeleteId)} onClose={() => setPendingDeleteId(null)}>
+          <p className="font-display font-semibold text-fg mb-1">Delete this dataset?</p>
+          <p className="font-mono text-xs text-muted mb-5">This can't be undone. The dashboard and all its charts will be permanently removed.</p>
+          <div className="flex gap-2.5 justify-end">
+            <button
+              onClick={() => setPendingDeleteId(null)}
+              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => handleDeleteDataset(pendingDeleteId)}
+              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
+            >
+              Delete
+            </button>
+          </div>
+        </Modal>
         </div>
       </div>
     )
@@ -192,46 +273,29 @@ function DasherApp() {
 
   return (
     <div className={dark ? 'dark' : ''}>
-      <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100 transition-colors duration-300">
+      <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
         <Header
-          phase={phase}
+          showHome={showHome}
           onGoHome={handleGoHome}
           user={auth.user}
           onLogout={auth.logout}
           dark={dark}
           onToggleDark={() => setDark(d => !d)}
         />
-        <div className="max-w-5xl mx-auto px-8 py-10 flex gap-16">
-          <nav className="flex flex-col gap-6 pt-1 shrink-0 w-36">
-            {STEPS.map(step => {
-              const isDone   = status[step.key] === 'done'
-              const isActive = step.key === activeStep
-              const isLocked = !isDone && !isActive
-              return (
-                <button
-                  key={step.key}
-                  disabled={!isDone}
-                  onClick={() => isDone && toggleExpanded(step.key)}
-                  title={isDone ? 'Click to expand / collapse' : undefined}
-                  className={`flex items-center gap-3 text-left transition-opacity duration-150 ${isDone ? 'cursor-pointer' : 'cursor-default'} ${isLocked ? 'opacity-40' : ''}`}
-                >
-                  <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 font-mono text-xs transition-all duration-300 ${isDone ? 'bg-amber-400 text-neutral-950' : ''} ${isActive ? 'border-2 border-amber-400 text-amber-400' : ''} ${isLocked ? 'border border-neutral-300 dark:border-neutral-700 text-neutral-400' : ''}`}>
-                    {isDone ? '✓' : step.number}
-                  </div>
-                  <span className={`font-mono text-xs tracking-wider uppercase leading-tight ${isActive ? 'text-neutral-900 dark:text-neutral-100' : ''} ${isDone ? 'text-neutral-400 dark:text-neutral-500' : ''} ${isLocked ? 'text-neutral-300 dark:text-neutral-700' : ''}`}>
-                    {step.label}
-                  </span>
-                </button>
-              )
-            })}
-          </nav>
-          <main className="flex-1 min-w-0 space-y-1">
-            <UploadStep    dasher={dasher} isActive={activeStep === 'upload'}    isExpanded={expandedSteps.has('upload')}    onToggle={() => toggleExpanded('upload')} />
-            <SemanticsStep dasher={dasher} isActive={activeStep === 'semantics'} isExpanded={expandedSteps.has('semantics')} onToggle={() => toggleExpanded('semantics')} />
-            <PlanStep      dasher={dasher} isActive={activeStep === 'plan'}      isExpanded={expandedSteps.has('plan')}      onToggle={() => toggleExpanded('plan')} />
-            <DashboardStep dasher={dasher} isActive={activeStep === 'dashboard'} isExpanded={expandedSteps.has('dashboard')} onToggle={() => toggleExpanded('dashboard')} />
-          </main>
-        </div>
+        <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
+        {isWorkspaceRoute ? (
+          hydrating ? (
+            <div className="max-w-xl mx-auto px-8 py-16">
+              <p className="font-mono text-xs text-muted animate-pulse">Loading dashboard...</p>
+            </div>
+          ) : (
+            <Workspace dasher={dasher} />
+          )
+        ) : (
+          <div className="max-w-5xl mx-auto px-8 py-16">
+            <LaunchCard dasher={dasher} onDone={handleLaunchDone} />
+          </div>
+        )}
       </div>
     </div>
   )

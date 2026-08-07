@@ -1,35 +1,30 @@
 import json
+import io
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from app.services.database import (
     get_cached_semantics,
+    get_cached_dashboard_plan,
     get_dataset_metadata,
     get_dataset_owner,
-    get_cached_dashboard_plan,
-    persist_metabase_dashboard_id,
     persist_dashboard_plan,
     update_dashboard_plan,
     persist_profile_json,
+    set_last_active_mode
 )
+
 from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
+from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
-from app.services.metabaseClient import (
-    get_session_token,
-    get_database_id,
-    create_dashboard,
-    create_public_link,
-    get_dashboard_card_ids,
-    delete_dashboard,
-    delete_card,
-)
-from app.dependencies import get_db, get_http_client, get_app_state, require_editor
-from app.config import settings
+from app.dependencies import get_db, get_current_user, require_editor
+
+from starlette.concurrency import run_in_threadpool
 import logging
 
 router = APIRouter()
-UPLOAD_DIR = settings.UPLOAD_DIR
+
 
 
 logger = logging.getLogger(__name__)
@@ -39,14 +34,16 @@ DEFAULT_GOAL = "Build the most analytically interesting dashboard you can from t
 
 class AgentRequest(BaseModel):
     goal: str = DEFAULT_GOAL
+    nudge: bool = False
 
 
-async def _setup_agent_run(dataset_id, db, http_client, app_state, current_user, goal_raw):
+async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     """
     Shared setup for both the sync and streaming agent routes: auth/ownership
-    checks, dataset file + metadata lookup, profiling, and Metabase dashboard
-    creation. Raises HTTPException on any failure — caller does not need to
-    wrap this in try/except.
+    checks, dataset file + metadata lookup, profiling, and — for a nudge —
+    loading the existing agent-mode dashboard to build on. Raises
+    HTTPException on any failure — caller does not need to wrap this in
+    try/except.
     """
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
@@ -60,46 +57,39 @@ async def _setup_agent_run(dataset_id, db, http_client, app_state, current_user,
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset metadata not found.")
 
-    matches = list(UPLOAD_DIR.glob(f"{dataset_id}_*.csv"))
-    if not matches:
-        raise HTTPException(status_code=404, detail="Dataset file not found.")
-
-    profile = profile_csv(matches[0], dataset_id)
+    profile = await profile_csv(db, metadata["table_name"], dataset_id)
     await persist_profile_json(db, dataset_id, profile)
 
-    token = await get_session_token(http_client, app_state)
-    database_id = await get_database_id(token, http_client)
-
-    existing_dashboard_id = metadata.get("metabase_dashboard_id")
-    if existing_dashboard_id:
-        owning_plan = await get_cached_dashboard_plan(db, dataset_id)
-        owning_mode = owning_plan.get("mode", "pipeline") if owning_plan else "pipeline"
-        if owning_mode != "agent":
-            try:
-                card_ids = await get_dashboard_card_ids(token, http_client, existing_dashboard_id)
-                await delete_dashboard(token, http_client, existing_dashboard_id)
-                for card_id in card_ids:
-                    await delete_card(token, http_client, card_id)
-            except Exception:
-                pass
-
-    dashboard_title = f"{metadata['table_name']} — Agent"
-    dashboard_id = await create_dashboard(token, http_client, dashboard_title)
-    public_url = await create_public_link(token, http_client, dashboard_id)
-    await persist_metabase_dashboard_id(db, dataset_id, dashboard_id, public_url)
-
     goal = (goal_raw or "").strip() or DEFAULT_GOAL
+
+    existing_charts = None
+    existing_trace = []
+    existing_rationale = ""
+    existing_dashboard_title = ""
+    cache_hit = False
+    if nudge:
+        existing_plan = await get_cached_dashboard_plan(db, dataset_id, mode="agent")
+        if not existing_plan or not existing_plan.get("charts"):
+            raise HTTPException(
+                status_code=400,
+                detail="No existing agent dashboard found to nudge. Run without nudge first.",
+            )
+        existing_charts = existing_plan["charts"]
+        existing_trace = existing_plan.get("trace", [])
+        existing_rationale = existing_plan.get("rationale", "")
+        existing_dashboard_title = existing_plan.get("dashboard_title", "")
+        cache_hit = existing_plan.get("goal") == goal
 
     return {
         "semantics": semantics,
         "metadata": metadata,
         "profile": profile,
-        "token": token,
-        "database_id": database_id,
-        "dashboard_title": dashboard_title,
-        "dashboard_id": dashboard_id,
-        "public_url": public_url,
         "goal": goal,
+        "existing_charts": existing_charts,
+        "existing_trace": existing_trace,
+        "existing_rationale": existing_rationale,
+        "existing_dashboard_title": existing_dashboard_title,
+        "cache_hit": cache_hit
     }
 
 
@@ -108,12 +98,22 @@ async def run_agent_dashboard(
     dataset_id: str,
     body: AgentRequest,
     db=Depends(get_db),
-    http_client=Depends(get_http_client),
-    app_state=Depends(get_app_state),
     current_user=Depends(require_editor),
 ):
     try:
-        setup = await _setup_agent_run(dataset_id, db, http_client, app_state, current_user, body.goal)
+        setup = await _setup_agent_run(dataset_id, db, current_user, body.goal, body.nudge)
+
+        if setup["cache_hit"]:
+            # Goal unchanged since the last nudge — nothing to build, skip
+            # the LLM call and return the existing agent dashboard as-is.
+            await set_last_active_mode(db, dataset_id, "agent")
+            return {
+                "charts_built": setup["existing_charts"],
+                "trace": setup["existing_trace"],
+                "rationale": setup["existing_rationale"],
+                "dashboard_title": setup["existing_dashboard_title"],
+                "cached": True,
+            }
 
         result = await run_agent(
             goal=setup["goal"],
@@ -121,27 +121,33 @@ async def run_agent_dashboard(
             field_map=setup["metadata"]["field_map"],
             semantics=setup["semantics"]["semantics_json"],
             profile=setup["profile"],
-            dashboard_id=setup["dashboard_id"],
-            token=setup["token"],
-            http_client=http_client,
-            database_id=setup["database_id"],
+            pool=db,
+            existing_charts=setup["existing_charts"],
         )
+
+        combined_trace = setup["existing_trace"] + result["trace"]
 
         agent_plan = {
             "dataset_id": dataset_id,
-            "dashboard_title": setup["dashboard_title"],
             "mode": "agent",
             "goal": setup["goal"],
             "charts": result["charts_built"],
-            "trace": result["trace"],
+            "trace": combined_trace,
+            "rationale": result["rationale"],
+            "dashboard_title": result["dashboard_title"],
         }
-        await persist_dashboard_plan(db, dataset_id, agent_plan)
+
+        if body.nudge:
+            await update_dashboard_plan(db, dataset_id, agent_plan)
+        else:
+            await persist_dashboard_plan(db, dataset_id, agent_plan)
+        await set_last_active_mode(db, dataset_id, "agent")
 
         return {
-            "dashboard_id": setup["dashboard_id"],
-            "public_url": setup["public_url"],
             "charts_built": result["charts_built"],
-            "trace": result["trace"],
+            "trace": combined_trace,
+            "rationale": result["rationale"],
+            "dashboard_title": result["dashboard_title"],
         }
 
     except HTTPException:
@@ -154,8 +160,52 @@ async def run_agent_dashboard(
         raise HTTPException(status_code=500, detail="Agent run failed. Please try again.")
 
 
+class ChartImage(BaseModel):
+    chart_title: str
+    image_base64: str  # PNG, base64-encoded, no "data:image/png;base64," prefix
+
+
+class ReportRequest(BaseModel):
+    charts: list[ChartImage]
+
+@router.post("/datasets/{dataset_id}/report")
+async def get_agent_dashboard_report(
+    dataset_id: str,
+    body: ReportRequest,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    owner = await get_dataset_owner(db, dataset_id)
+    if owner != current_user.user_id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    agent_plan = await get_cached_dashboard_plan(db, dataset_id, mode="agent")
+    if not agent_plan or not agent_plan.get("charts"):
+        raise HTTPException(status_code=404, detail="No agent-built dashboard found for this dataset.")
+
+    if not body.charts:
+        raise HTTPException(status_code=400, detail="No chart images provided.")
+
+    metadata = await get_dataset_metadata(db, dataset_id)
+    fallback_title = (metadata or {}).get("original_filename", "Dashboard Report")
+    dashboard_title = agent_plan.get("dashboard_title") or fallback_title
+
+    pdf_bytes = await run_in_threadpool(
+        generate_agent_report_pdf,
+        dashboard_title=dashboard_title,
+        rationale=agent_plan.get("rationale", ""),
+        charts=[c.model_dump() for c in body.charts],
+    )
+
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{dataset_id}_report.pdf"'},
+    )
+
 def _sse_format(event: dict) -> str:
-    return f"data: {json.dumps(event)}\n\n"
+    from app.services.database import json_default
+    return f"data: {json.dumps(event, default=json_default)}\n\n"
 
 
 @router.post("/datasets/{dataset_id}/dashboard/agent/stream")
@@ -163,30 +213,53 @@ async def run_agent_dashboard_stream(
     dataset_id: str,
     body: AgentRequest,
     db=Depends(get_db),
-    http_client=Depends(get_http_client),
-    app_state=Depends(get_app_state),
     current_user=Depends(require_editor),
 ):
     # All setup that can fail with a clean HTTP status runs before the stream
-    # opens, so the client gets a normal 404/403/etc rather than a swallowed
-    # error mid-stream.
-    setup = await _setup_agent_run(dataset_id, db, http_client, app_state, current_user, body.goal)
+    # opens, so the client gets a normal 404/403/400/etc rather than a
+    # swallowed error mid-stream.
+    setup = await _setup_agent_run(dataset_id, db, current_user, body.goal, body.nudge)
 
     async def event_generator():
-        charts_built = []
-        trace = []
+        if setup["cache_hit"]:
+            # Goal unchanged since the last nudge — skip the LLM call and
+            # just replay the existing result as a rationale + finish pair,
+            # which is all applyAgentEvents/ProcessingView need to settle.
+            await set_last_active_mode(db, dataset_id, "agent")
+            yield _sse_format({
+                "type": "rationale",
+                "text": setup["existing_rationale"],
+                "dashboard_title": setup["existing_dashboard_title"],
+            })
+            yield _sse_format({
+                "type": "finish",
+                "reasoning": "No changes — goal matches the last run, reused the cached dashboard.",
+                "charts_built": setup["existing_charts"],
+            })
+            return
+        # Seed from existing state on a nudge, so a disconnect right after
+        # starting still leaves the true current state recoverable, not an
+        # empty dashboard.
+        charts_built = list(setup["existing_charts"]) if setup["existing_charts"] else []
+        trace = list(setup["existing_trace"])
+        rationale = setup.get("existing_rationale", "")
+        dashboard_title = setup.get("existing_dashboard_title", "")
 
-        # Insert the row now so a disconnect right after dashboard creation
-        # still leaves a recoverable row for GET /datasets/{id}/state.
         agent_plan = {
             "dataset_id": dataset_id,
-            "dashboard_title": setup["dashboard_title"],
             "mode": "agent",
             "goal": setup["goal"],
             "charts": charts_built,
             "trace": trace,
+            "rationale": rationale,
+            "dashboard_title": dashboard_title,
         }
-        await persist_dashboard_plan(db, dataset_id, agent_plan)
+
+        if body.nudge:
+            await update_dashboard_plan(db, dataset_id, agent_plan)
+        else:
+            await persist_dashboard_plan(db, dataset_id, agent_plan)
+        await set_last_active_mode(db, dataset_id, "agent")
 
         try:
             async for event in stream_agent(
@@ -195,15 +268,14 @@ async def run_agent_dashboard_stream(
                 field_map=setup["metadata"]["field_map"],
                 semantics=setup["semantics"]["semantics_json"],
                 profile=setup["profile"],
-                dashboard_id=setup["dashboard_id"],
-                token=setup["token"],
-                http_client=http_client,
-                database_id=setup["database_id"],
+                pool=db,
+                existing_charts=setup["existing_charts"],
             ):
                 event_type = event["type"]
 
                 if event_type == "chart_built":
                     charts_built.append({
+                        "card_id": event["card_id"],
                         "chart_title": event["chart_title"],
                         "chart_type": event["chart_type"],
                         "sql": event["sql"],
@@ -211,16 +283,42 @@ async def run_agent_dashboard_stream(
                         "y_alias": event.get("y_alias"),
                         "series_alias": event.get("series_alias"),
                         "viz_params": event.get("viz_params"),
-                        "card_id": event["card_id"],
                         "healed": event["healed"],
+                        "rows": event.get("rows"),
+                        "spec": event.get("spec"),
+                        "source": "agent",
                     })
-
-                if event_type == "finish":
-                    event = {
-                        **event,
-                        "dashboard_id": setup["dashboard_id"],
-                        "public_url": setup["public_url"],
+                elif event_type == "chart_edited":
+                    match_index = next(
+                        (i for i, c in enumerate(charts_built) if c.get("card_id") == event["card_id"]), None
+                    )
+                    edited = {
+                        "card_id": event["card_id"],
+                        "chart_title": event["chart_title"],
+                        "chart_type": event["chart_type"],
+                        "sql": event["sql"],
+                        "x_alias": event.get("x_alias"),
+                        "y_alias": event.get("y_alias"),
+                        "series_alias": event.get("series_alias"),
+                        "viz_params": event.get("viz_params"),
+                        "healed": event["healed"],
+                        "rows": event.get("rows"),
+                        "spec": event.get("spec"),
+                        "source": "agent",
                     }
+                    if match_index is not None:
+                        charts_built[match_index] = edited
+                    else:
+                        charts_built.append(edited)
+                elif event_type == "chart_deleted":
+                    charts_built[:] = [c for c in charts_built if c.get("card_id") != event.get("card_id")]
+                elif event_type == "rationale":
+                    rationale = event.get("text", "")
+                    dashboard_title = event.get("dashboard_title", "")
+                    agent_plan = {**agent_plan, "rationale": rationale, "dashboard_title": dashboard_title}
+                    await update_dashboard_plan(db, dataset_id, agent_plan)
+                    yield _sse_format(event)
+                    continue
 
                 # Persist trace-worthy events (everything except UI-only ones)
                 # so the dataset state survives a disconnect mid-run.

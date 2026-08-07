@@ -1,0 +1,1 @@
+ALTER TABLE dashboard_plans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();

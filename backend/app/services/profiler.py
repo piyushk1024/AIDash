@@ -1,11 +1,10 @@
-import csv
-from pathlib import Path
 import pandas as pd
+from decimal import Decimal
+
 
 def infer_basic_type(values: list[str]) -> str:
-    
+
     non_empty = [v for v in values if v not in (None, "", "null", "NULL", "NA", "N/A", "na", "n/a")]
-    # non_empty = [v for v in values if v not in (None, "", "null", "NULL")]
     if not non_empty:
         return "string"
 
@@ -18,7 +17,7 @@ def infer_basic_type(values: list[str]) -> str:
         for v in non_empty:
             int(str(v))
         return "integer"
-    except (ValueError, TypeError): 
+    except (ValueError, TypeError):
         pass
 
     try:
@@ -31,24 +30,41 @@ def infer_basic_type(values: list[str]) -> str:
     return "string"
 
 
-def profile_csv(file_path: Path, dataset_id: str) -> dict:
-    with file_path.open("r", encoding="utf-8-sig", newline="") as f:
-        reader = csv.DictReader(f)
-        rows = list(reader)
+def _native(v):
+    # Converts pandas/numpy scalar types (numpy.float64, numpy.int64, etc.)
+    # to native Python types, and NaN to None. Anything from describe(),
+    # value_counts(), or a correlation matrix comes back as a numpy scalar,
+    # which plain json.dumps can't serialize — this is the single point
+    # where that gets fixed, so every downstream consumer (JSONB storage,
+    # LLM prompts, agent profile summaries) only ever sees plain types.
+    if v is None:
+        return None
+    if isinstance(v, float) and pd.isna(v):
+        return None
+    if isinstance(v, Decimal):
+        return float(v)
+    if hasattr(v, "item"):
+        return v.item()
+    return v
+
+
+async def profile_csv(pool, table_name: str, dataset_id: str) -> dict:
+    async with pool.acquire() as conn:
+        records = await conn.fetch(f'SELECT * FROM "{table_name}"')
+
+    columns = list(records[0].keys()) if records else []
+    rows = [dict(r) for r in records]
 
     if not rows:
         return {
             "dataset_id": dataset_id,
-            "file_name": file_path.name,
+            "file_name": table_name,
             "row_count": 0,
             "column_count": 0,
             "columns": [],
         }
 
-    columns = reader.fieldnames or []
-
-    # Load into pandas for statistical profiling
-    df = pd.read_csv(file_path, encoding="utf-8-sig")
+    df = pd.DataFrame(rows)
 
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     categorical_cols = [c for c in df.columns if c not in numeric_cols]
@@ -59,7 +75,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         corr = df[numeric_cols].corr().round(2)
         for col in numeric_cols:
             correlations[col] = {
-                other: (None if pd.isna(corr.loc[col, other]) else corr.loc[col, other])
+                other: _native(corr.loc[col, other])
                 for other in numeric_cols
                 if other != col
                 }
@@ -69,16 +85,28 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
     grouped_stats = {}
     for cat_col in categorical_cols:
         if df[cat_col].nunique() <= 20 and numeric_cols:
-            group = df.groupby(cat_col)[numeric_cols].mean().round(2)            
+            group = df.groupby(cat_col)[numeric_cols].mean().round(2)
             group_dict = group.to_dict()
-            # Replace NaN with None after conversion
             cleaned = {}
             for num_col, district_vals in group_dict.items():
                 cleaned[num_col] = {
-                    k: (None if pd.isna(v) else v)
+                    _native(k): _native(v)
                     for k, v in district_vals.items()
                 }
             grouped_stats[cat_col] = cleaned
+
+        # Coefficient of variation across group means — flags flat/low-signal
+        # groupings before they reach chart planning.
+            spread = {}
+            for num_col in numeric_cols:
+                means = group[num_col]
+                mean_of_means = means.mean()
+                if mean_of_means and mean_of_means != 0:
+                    cv = _native((means.std() / abs(mean_of_means)))
+                else:
+                    cv = None
+                spread[num_col] = round(cv, 4) if cv is not None else None
+            grouped_stats[cat_col]["_spread_cv"] = spread
 
 
     profile_columns = []
@@ -90,7 +118,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         col_profile = {
             "column_name": col,
             "inferred_type": infer_basic_type(non_null_values[:50]),
-            "sample_values": distinct_values[:5],
+            "sample_values": [_native(v) for v in distinct_values[:5]],
             "null_count": len(values) - len(non_null_values),
             "distinct_count": len(set(non_null_values)),
         }
@@ -98,7 +126,7 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
         if col in numeric_cols:
             desc = df[col].describe().round(2).to_dict()
             col_profile["stats"] = {
-                k: (None if pd.isna(v) else v)
+                k: _native(v)
                 for k, v in {
                     "mean": desc.get("mean"),
                     "std": desc.get("std"),
@@ -113,15 +141,16 @@ def profile_csv(file_path: Path, dataset_id: str) -> dict:
                 col_profile["correlations"] = correlations[col]
 
         elif col in categorical_cols:
-            col_profile["value_counts"] = (
-                df[col].value_counts().head(10).to_dict()
-            )
+            col_profile["value_counts"] = {
+                _native(k): _native(v)
+                for k, v in df[col].value_counts().head(10).items()
+            }
 
         profile_columns.append(col_profile)
 
     return {
         "dataset_id": dataset_id,
-        "file_name": file_path.name,
+        "file_name": table_name,
         "row_count": len(rows),
         "column_count": len(columns),
         "columns": profile_columns,

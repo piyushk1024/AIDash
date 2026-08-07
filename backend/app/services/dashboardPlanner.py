@@ -1,7 +1,15 @@
 import json
 from app.services.llm import generate
 from app.services.sqlGuard import validate_sql
-from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
+from app.schemas.chartTypes import (
+    CHART_TYPE_GUIDANCE,
+    CHART_TYPE_VALUES,
+    ChartType,
+    DIMENSION_MEASURE_TYPES,
+    MEASURE_PAIR_TYPES,
+    HISTOGRAM_TYPES,
+    DISTRIBUTION_TYPES,
+)
 
 
 def _build_chartable_context(semantics: dict, profile: dict, field_map: dict) -> tuple[set, dict, list]:
@@ -52,6 +60,13 @@ Available columns (name | base_type | semantic_role):
 Dataset profile (stats, value_counts, correlations, grouped_stats):
 {profile_summary}
 
+Note on grouped_stats: each categorical grouping includes a "_spread_cv" entry
+per numeric column — the coefficient of variation (std / mean) across that
+column's group means. A low _spread_cv (below ~0.10) means the groups barely
+differ on that measure; a chart built on that pairing will look visually flat
+regardless of chart type. Use this to judge which (dimension, measure) pairs
+are actually worth charting.
+
 ---
 
 Reasoning pass:
@@ -73,6 +88,15 @@ doesn't support that many, more if it's unusually rich. Consider:
 Chart planning pass:
 For each question, plan one chart. Write PostgreSQL SQL that answers it directly.
 Alias all output columns clearly — Metabase uses aliases as axis labels.
+
+Before finalizing each chart, check _spread_cv for that chart's grouping
+column and measure. If it's low (below ~0.10), the comparison is essentially
+flat and not worth a chart in that form. Instead:
+- pick a different angle on the same columns (a different breakdown, a
+  highlight of actual outliers within the group, a ratio/derived metric), or
+- reframe it if the flatness itself is the finding (e.g. "failure rate is
+  uniform across all services" as a scalar/comparison stat), or
+- drop the question and use a different one from the reasoning pass
 
 HARD CONSTRAINTS — non-negotiable:
 - Only use columns from the available columns list above
@@ -114,8 +138,6 @@ Return ONLY a JSON object with exactly these fields:
 
 Raw JSON only, no markdown.
 """
-
-
 async def generate_dashboard_plan(
     dataset_id: str,
     semantics: dict,
@@ -152,13 +174,27 @@ async def generate_dashboard_plan(
     parsed = json.loads(raw)
     parsed["dataset_id"] = dataset_id
 
-    # Validate each chart — drop charts that fail the SQL guard or carry
-    # an unrecognised chart_type. Same fail-soft pattern for both checks:
-    # a bad chart is dropped from the plan rather than aborting the whole run.
+    # Validate each chart — drop charts that fail the SQL guard, carry an
+    # unrecognised chart_type, or are missing an alias the executor will
+    # require anyway. This last check catches at plan time what would
+    # otherwise silently force every such chart through a guaranteed
+    # healer pass on first build.
     safe_charts = []
     for chart in parsed.get("charts", []):
-        if chart.get("chart_type") not in CHART_TYPE_VALUES:
+        chart_type_str = chart.get("chart_type")
+        if chart_type_str not in CHART_TYPE_VALUES:
             continue
+
+        chart_type = ChartType(chart_type_str)
+
+        if chart_type in DIMENSION_MEASURE_TYPES or chart_type in MEASURE_PAIR_TYPES:
+            if not chart.get("x_alias") or not chart.get("y_alias"):
+                continue
+        if chart_type in HISTOGRAM_TYPES and not chart.get("x_alias"):
+            continue
+        if chart_type in DISTRIBUTION_TYPES and not chart.get("y_alias"):
+            continue
+
         try:
             validate_sql(chart["sql"], context=chart.get("chart_title", ""))
             safe_charts.append(chart)
@@ -167,3 +203,4 @@ async def generate_dashboard_plan(
 
     parsed["charts"] = safe_charts
     return parsed
+

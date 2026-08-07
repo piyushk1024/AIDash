@@ -10,9 +10,11 @@ export default function InsightsPanel({ datasetId }) {
 
   useEffect(() => {
     if (!datasetId) return
-    setFetching(true)
+    let cancelled = false
+    // setFetching(true)
     api.getInsights(datasetId)
       .then(res => {
+         if (cancelled) return
         setHistory(
           (res.insights ?? []).map((entry, i) => ({
             ...entry,
@@ -22,7 +24,8 @@ export default function InsightsPanel({ datasetId }) {
         )
       })
       .catch(() => {})
-      .finally(() => setFetching(false))
+      .finally(() => { if (!cancelled) setFetching(false) })
+      return () => {cancelled = true}
   }, [datasetId])
 
   async function handleAsk() {
@@ -86,22 +89,22 @@ export default function InsightsPanel({ datasetId }) {
           onKeyDown={handleKeyDown}
           placeholder="e.g. Which team wins most often?"
           disabled={loading}
-          className="flex-1 bg-transparent border border-neutral-700 rounded px-3 py-2
-                     font-mono text-xs text-neutral-200 placeholder-neutral-600
-                     focus:outline-none focus:border-amber-400 transition-colors
+          className="flex-1 bg-transparent border border-muted rounded px-3 py-2
+                     font-mono text-xs text-fg placeholder-muted
+                     focus:outline-none focus:border-accent transition-colors
                      disabled:opacity-50"
         />
         <button
           onClick={handleAsk}
           disabled={loading || !prompt.trim()}
           className="px-4 py-2 rounded font-mono text-xs tracking-widest uppercase transition-all
-                     disabled:bg-neutral-800 disabled:text-neutral-600 disabled:cursor-not-allowed
-                     enabled:bg-amber-400 enabled:text-neutral-950 enabled:hover:bg-amber-300"
+                     disabled:bg-surface disabled:text-muted disabled:cursor-not-allowed
+                     enabled:bg-accent enabled:text-accent-fg enabled:hover:bg-accent/90"
         >
           {loading ? '...' : 'Ask →'}
         </button>
       </div>
-      <p className="font-mono text-[10px] text-neutral-600 leading-relaxed">
+      <p className="font-mono text-[10px] text-muted leading-relaxed">
         Insights are AI-generated and may be inaccurate. Verify against source data for important decisions. Early stage feature.
       </p>
 
@@ -111,36 +114,36 @@ export default function InsightsPanel({ datasetId }) {
 
       {/* History */}
       {fetching ? (
-        <div className="font-mono text-xs text-neutral-600 animate-pulse">Loading history...</div>
+        <div className="font-mono text-xs text-muted animate-pulse">Loading history...</div>
       ) : history.length > 0 ? (
         <div className="space-y-2 mt-2">
           {history.map((entry, i) => (
-            <div key={entry.insight_id} className="border border-neutral-800 rounded overflow-hidden">
+            <div key={entry.insight_id} className="border border-muted/40 rounded overflow-hidden">
 
               <button
                 onClick={() => toggleEntry(i)}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-neutral-900 transition-colors"
+                className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-surface transition-colors"
               >
-                <span className="text-amber-400 font-mono text-xs">→</span>
-                <span className="font-mono text-xs text-neutral-300 flex-1">{entry.prompt}</span>
+                <span className="text-accent font-mono text-xs">→</span>
+                <span className="font-mono text-xs text-fg flex-1">{entry.prompt}</span>
                 <span
                   onClick={(e) => handleDelete(entry.insight_id, e)}
-                  className="font-mono text-[10px] text-neutral-600 hover:text-red-400 transition-colors px-1"
+                  className="font-mono text-[15px] text-muted hover:text-red-400 transition-colors px-1"
                   title="Delete"
                 >
-                  ✕
+                  🗑
                 </span>
-                <span className="font-mono text-[10px] text-neutral-600">
+                <span className="font-mono text-[10px] text-muted">
                   {entry.expanded ? '▴' : '▾'}
                 </span>
               </button>
 
               {entry.expanded && (
-                <div className="px-3 pb-3 space-y-2 border-t border-neutral-800">
+                <div className="px-3 pb-3 space-y-2 border-t border-muted/40">
                   {entry.insights.slice(0, entry.shownCount).map((insight, j) => (
                     <div key={j} className="pt-2 space-y-1">
                       <div className="flex items-center gap-3">
-                        <span className="font-mono text-xs text-neutral-200">{insight.title}</span>
+                        <span className="font-mono text-xs text-fg">{insight.title}</span>
                         <span className={`font-mono text-[10px] uppercase tracking-wider
                           ${insight.confidence === 'high'   ? 'text-emerald-400' : ''}
                           ${insight.confidence === 'medium' ? 'text-amber-400'   : ''}
@@ -149,7 +152,7 @@ export default function InsightsPanel({ datasetId }) {
                           {insight.confidence}
                         </span>
                       </div>
-                      <div className="font-mono text-xs text-neutral-500 leading-relaxed">
+                      <div className="font-mono text-xs text-muted leading-relaxed">
                         {insight.finding}
                       </div>
                     </div>
@@ -158,7 +161,7 @@ export default function InsightsPanel({ datasetId }) {
                   {entry.shownCount < entry.insights.length && (
                     <button
                       onClick={() => showMore(i)}
-                      className="font-mono text-[10px] text-neutral-600 hover:text-amber-400 transition-colors mt-1"
+                      className="font-mono text-[10px] text-muted hover:text-accent transition-colors mt-1"
                     >
                       + {entry.insights.length - entry.shownCount} more
                     </button>
@@ -170,7 +173,7 @@ export default function InsightsPanel({ datasetId }) {
           ))}
         </div>
       ) : (
-        <div className="font-mono text-xs text-neutral-600">No insights yet. Ask a question above.</div>
+        <div className="font-mono text-xs text-muted">No insights yet. Ask a question above.</div>
       )}
     </div>
   )

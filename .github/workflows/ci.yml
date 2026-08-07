@@ -2,26 +2,33 @@ name: CI
 
 on: [push]
 
+permissions:
+  contents: read
+
 jobs:
   ruff:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install ruff
+      - run: pip install ruff==0.15.20
       - run: ruff check backend/
 
   eslint:
       runs-on: ubuntu-latest
-      continue-on-error: true      
+      continue-on-error: false
+      permissions:
+        contents: read      
       steps:
         - uses: actions/checkout@v4
         - uses: actions/setup-node@v4
           with:
-            node-version: '20'
+            node-version: '22'
         - run: npm install
           working-directory: frontend
         - run: npx eslint .
@@ -29,7 +36,9 @@ jobs:
 
   pytest:
     runs-on: ubuntu-latest
-    continue-on-error: true
+    continue-on-error: false
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,8 +50,4 @@ jobs:
             UPLOAD_DIR: /tmp/uploads
             LLM_API_KEY: test-key
             DATABASE_URL: postgresql://test:test@localhost/test
-            METABASE_URL: http://localhost:3000
-            METABASE_USERNAME: test
-            METABASE_PASSWORD: test
-            METABASE_DB_NAME: test
             JWT_SECRET: test-secret
