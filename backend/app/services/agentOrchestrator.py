@@ -5,13 +5,14 @@ from app.services.llm import generate, generate_with_tools
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
 from app.services.agentDispatch import (
     dispatch_inspect_data,
-    dispatch_build_and_add_chart,
+dispatch_build_and_add_chart,
     dispatch_edit_existing_chart,
     dispatch_delete_existing_chart,
 )
 from app.schemas.chartTypes import CHART_TYPE_GUIDANCE
 from app.services.database import json_default
 from app.config import settings
+from app.services.quotaGuard import get_current_user_quota
 
 logger = logging.getLogger(__name__)
 
@@ -179,7 +180,7 @@ async def stream_agent(
 
     async def execute_sql_fn(sql: str) -> dict:
         from app.services.queryExecutor import execute_raw_query
-        return await execute_raw_query(pool, sql)
+        return await execute_raw_query(pool, sql, table_name)
 
     for iteration in range(settings.AGENT_MAX_ITERATIONS):
         available_tools = _get_available_tools(inspect_count, has_existing_charts)
@@ -212,11 +213,13 @@ async def stream_agent(
             })
 
             synthesis = await generate_dashboard_synthesis(goal, charts_built, [])
+            quota = await get_current_user_quota()
 
             yield {
                 "type": "rationale",
                 "step": iteration + 1,
                 "tool": "finish",
+                "quota": quota,
                 "dashboard_title": synthesis["dashboard_title"],
                 "text": synthesis["rationale"],
             }
@@ -232,7 +235,7 @@ async def stream_agent(
 
         if tool_name == "inspect_data":
             observation, trace_entry = await dispatch_inspect_data(
-                tool_args=tool_args, execute_sql_fn=execute_sql_fn, step=iteration + 1,
+                tool_args=tool_args, execute_sql_fn=execute_sql_fn, step=iteration + 1, table_name=table_name,
             )
             inspect_count += 1
             yield {"type": "inspect_result", **trace_entry}
@@ -240,7 +243,7 @@ async def stream_agent(
         elif tool_name == "build_and_add_chart":
             observation, trace_entry, healed = await dispatch_build_and_add_chart(
                 tool_args=tool_args, pool=pool, field_map=field_map,
-                charts_built=charts_built, step=iteration + 1,
+                charts_built=charts_built, step=iteration + 1, table_name=table_name,
             )
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
@@ -249,7 +252,7 @@ async def stream_agent(
         elif tool_name == "edit_existing_chart":
             observation, trace_entry, healed = await dispatch_edit_existing_chart(
                 tool_args=tool_args, pool=pool, field_map=field_map,
-                charts_built=charts_built, step=iteration + 1,
+                charts_built=charts_built, step=iteration + 1, table_name=table_name,
             )
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
@@ -266,7 +269,8 @@ async def stream_agent(
             trace_entry = {
                 "step": iteration + 1, "tool": tool_name, "reasoning": "", "observation": observation,
             }
-            yield {"type": "phase_error", **trace_entry}
+            quota = await get_current_user_quota()
+            yield {"type": "phase_error","quota": quota, **trace_entry}
 
         messages.append({
             "role": "tool",

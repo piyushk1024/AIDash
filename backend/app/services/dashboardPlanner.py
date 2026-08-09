@@ -196,7 +196,7 @@ async def generate_dashboard_plan(
             continue
 
         try:
-            validate_sql(chart["sql"], context=chart.get("chart_title", ""))
+            validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
             safe_charts.append(chart)
         except ValueError:
             pass

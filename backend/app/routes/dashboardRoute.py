@@ -123,6 +123,7 @@ async def build_dashboard(
             detail="No dataset metadata found. Re-upload the CSV to generate field mappings.",
         )
     field_map = metadata["field_map"]
+    table_name = metadata["table_name"]
 
     built_charts, errors = [], []
     provider_unavailable = False
@@ -139,7 +140,7 @@ async def build_dashboard(
             continue
 
         result, error = await build_card_with_healing(
-            chart, field_map, db, existing_id=chart.get("card_id"),
+            chart, field_map, db, table_name, existing_id=chart.get("card_id"),
         )
         # print("DEBUG error value:", error)
         

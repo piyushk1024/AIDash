@@ -17,12 +17,12 @@ def _extract_chart_spec(tool_args: dict) -> dict:
     }
 
 
-async def dispatch_inspect_data(tool_args: dict, execute_sql_fn, step: int) -> tuple[dict, dict]:
+async def dispatch_inspect_data(tool_args: dict, execute_sql_fn, step: int, table_name: str) -> tuple[dict, dict]:
     sql = tool_args["sql"]
     reasoning = tool_args.get("reasoning", "")
 
     try:
-        validate_sql(sql, context="agent_inspect")
+        validate_sql(sql, table_name, context="agent_inspect")
     except ValueError:
         observation = {"error": "SQL validation failed."}
         trace_entry = {
@@ -58,6 +58,7 @@ async def dispatch_build_and_add_chart(
     field_map: dict,
     charts_built: list,
     step: int,
+    table_name: str,
 ) -> tuple[dict, dict, bool]:
     reasoning = tool_args.get("reasoning", "")
 
@@ -77,7 +78,7 @@ async def dispatch_build_and_add_chart(
     chart_spec = _extract_chart_spec(tool_args)
 
     try:
-        validate_sql(chart_spec["sql"], context=chart_spec["chart_title"])
+        validate_sql(chart_spec["sql"], table_name, context=chart_spec["chart_title"])
     except ValueError:
         observation = {"error": "SQL validation failed."}
         trace_entry = {
@@ -89,7 +90,7 @@ async def dispatch_build_and_add_chart(
         }
         return observation, trace_entry, False
 
-    result, error = await build_card_with_healing(chart_spec, field_map, pool)
+    result, error = await build_card_with_healing(chart_spec, field_map, pool, table_name)
     healed = bool(result and result.get("healed"))
 
     if error:
@@ -130,6 +131,7 @@ async def dispatch_edit_existing_chart(
     field_map: dict,
     charts_built: list,
     step: int,
+    table_name: str,
 ) -> tuple[dict, dict, bool]:
     reasoning = tool_args.get("reasoning", "")
     card_id = tool_args.get("card_id")
@@ -165,7 +167,7 @@ async def dispatch_edit_existing_chart(
         }
         return observation, trace_entry, False
 
-    result, error = await build_card_with_healing(chart_spec, field_map, pool, existing_id=card_id)
+    result, error = await build_card_with_healing(chart_spec, field_map, pool, table_name, existing_id=card_id)
     healed = bool(result and result.get("healed"))
 
     if error:

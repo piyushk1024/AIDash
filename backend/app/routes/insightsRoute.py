@@ -42,7 +42,7 @@ async def post_insight(
     profile = await profile_csv(db, table_name, dataset_id)
 
     async def execute_sql_fn(sql: str) -> dict:
-        return await execute_raw_query(db, sql)
+        return await execute_raw_query(db, sql, table_name)
 
     result = await generate_insights(
         table_name=table_name,

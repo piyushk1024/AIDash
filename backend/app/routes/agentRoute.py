@@ -18,6 +18,7 @@ from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
 from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
+from app.services.quotaGuard import QuotaExceededError
 from app.dependencies import get_db, get_current_user, require_editor
 
 from starlette.concurrency import run_in_threadpool
@@ -155,6 +156,9 @@ async def run_agent_dashboard(
     except LLMUnavailableError as e:
         logger.exception("Agent run failed for dataset %s — LLM unavailable", dataset_id)
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
+    except QuotaExceededError:
+        logger.info("Agent run blocked for dataset %s — daily quota reached", dataset_id)
+        raise HTTPException(status_code=429, detail="Daily demo limit reached. Please try again tomorrow.")
     except Exception:
         logger.exception("Agent run failed for dataset %s", dataset_id)
         raise HTTPException(status_code=500, detail="Agent run failed. Please try again.")
@@ -335,6 +339,12 @@ async def run_agent_dashboard_stream(
             yield _sse_format({
                 "type": "phase_error",
                 "error": f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.",
+            })
+        except QuotaExceededError:
+            logger.info("Agent stream blocked for dataset %s — daily quota reached", dataset_id)
+            yield _sse_format({
+                "type": "phase_error",
+                "error": "Daily demo limit reached. Please try again tomorrow.",
             })
         except Exception:
             logger.exception("Agent stream failed for dataset %s", dataset_id)

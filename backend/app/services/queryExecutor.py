@@ -41,7 +41,7 @@ def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
             pass
     return rows[:ROW_CHART_CAP]
 
-async def execute_chart_query(pool, chart: dict) -> dict:
+async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
     """
     Runs chart["sql"] through sqlGuard, executes it against the pool, and
     builds a Plotly spec (data + layout) from the result rows and chart_type.
@@ -51,7 +51,7 @@ async def execute_chart_query(pool, chart: dict) -> dict:
     (cardBuilder) is expected to route these through the existing
     self-healing retry cycle.
     """
-    validate_sql(chart["sql"], context=chart.get("chart_title", ""))
+    validate_sql(chart["sql"], table_name, context=chart.get("chart_title", ""))
 
     async with pool.acquire() as conn:
         records = await conn.fetch(chart["sql"])
@@ -63,13 +63,15 @@ async def execute_chart_query(pool, chart: dict) -> dict:
     return {"rows": rows, "spec": spec}
 
 
-async def execute_raw_query(pool, sql: str) -> dict:
+async def execute_raw_query(pool, sql: str, table_name: str) -> dict:
     """
     Executes raw SQL and returns rows only, no spec building. Used by
-    inspect_data (agent) and insight generation, where the caller has
-    already validated the SQL via sqlGuard and just wants result rows
-    to reason over — not a chart to render.
+    inspect_data (agent) and insight generation. Runs sql through sqlGuard
+    itself now (docstring previously assumed callers pre-validated —
+    tracking down every raw-SQL call site to confirm that held was riskier
+    than just validating here).
     """
+    validate_sql(sql, table_name)
     async with pool.acquire() as conn:
         records = await conn.fetch(sql)
     return {"rows": [dict(r) for r in records]}

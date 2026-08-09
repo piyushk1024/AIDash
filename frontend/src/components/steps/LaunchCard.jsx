@@ -6,6 +6,9 @@ import { api } from '../../lib/api'
 const fieldLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted"
 const fieldInput = "w-full bg-surface border border-muted rounded-control px-3 py-2.5 font-mono text-[13px] text-fg placeholder-muted/60 focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
 
+const MAX_FILE_MB = 30
+const MAX_ROWS = 100_000
+const MAX_COLUMNS = 50
 // rebuildContext (optional): { name, comment, hint, mode }
 // When present: dropzone/name/comment are disabled (no re-upload), mode +
 // hint stay editable, and submitting re-infers/rebuilds on the existing
@@ -39,13 +42,26 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
     setDragging(false)
     if (isRebuild) return
     const dropped = e.dataTransfer.files[0]
-    if (dropped?.name.endsWith('.csv')) setFile(dropped)
+    if (!dropped?.name.endsWith('.csv')) return
+    if (dropped.size > MAX_FILE_MB * 1024 * 1024) {
+      setLocalError(`File exceeds ${MAX_FILE_MB}MB limit`)
+      return
+    }
+    setLocalError(null)
+    setFile(dropped)
   }
 
   function handleFileChange(e) {
     if (isRebuild) return
     const picked = e.target.files[0]
-    if (picked) setFile(picked)
+    if (!picked) return
+    if (picked.size > MAX_FILE_MB * 1024 * 1024) {
+      setLocalError(`File exceeds ${MAX_FILE_MB}MB limit`)
+      e.target.value = ''
+      return
+    }
+    setLocalError(null)
+    setFile(picked)
   }
 
   async function handleFreshLaunch() {
@@ -183,6 +199,11 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
           </div>
         )}
       </div>
+      {!isRebuild && (
+        <div className="mt-2 font-mono text-[11px] text-muted">
+          Max {MAX_FILE_MB}MB · {MAX_ROWS.toLocaleString()} rows · {MAX_COLUMNS} columns
+        </div>
+      )}
 
       <div className="mt-5 grid grid-cols-2 gap-3">
         <div className="space-y-1.5">

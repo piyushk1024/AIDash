@@ -122,5 +122,5 @@ async def build_chart_from_prompt(
     if chart.get("chart_type") not in CHART_TYPE_VALUES:
         raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")
 
-    validate_sql(chart["sql"], context=chart.get("chart_title", ""))
+    validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
     return chart

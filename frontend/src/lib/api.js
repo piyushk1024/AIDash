@@ -1,5 +1,6 @@
 const BASE = '/api'
 const TOKEN_KEY = 'dasher_token'
+import { setQuotaState } from './quotaStore'
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY)
@@ -27,6 +28,12 @@ async function request(method, path, body, isFormData = false) {
   const res = await fetch(`${BASE}${path}`, options)
 
   if (res.status === 401) { handleUnauthorized(); return }
+
+  const remaining = res.headers.get('X-Quota-Remaining')
+  const limit = res.headers.get('X-Quota-Limit')
+  if (remaining !== null && limit !== null) {
+    setQuotaState({ remaining: Number(remaining), limit: Number(limit), unlimited: false })
+  }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -202,4 +209,5 @@ export const api = {
 
   getAdminFeedback: () =>
     request('GET', '/admin/feedback'),
+  getQuotaStatus: () => request('GET', '/me/quota'),
 }

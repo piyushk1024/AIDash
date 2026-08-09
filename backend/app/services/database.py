@@ -516,3 +516,14 @@ async def get_admin_feedback(pool: asyncpg.Pool) -> list[dict]:
         """
     )
     return [dict(row) for row in rows]
+
+async def set_user_daily_call_limit(pool: asyncpg.Pool, username: str, daily_call_limit: int | None) -> dict | None:
+    row = await pool.fetchrow(
+        """
+        UPDATE users SET daily_call_limit = $1
+        WHERE LOWER(username) = LOWER($2)
+        RETURNING user_id, username, daily_call_limit
+        """,
+        daily_call_limit, username,
+    )
+    return dict(row) if row else None

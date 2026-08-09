@@ -7,7 +7,9 @@ from app.services.llmClient import infer_semantics_with_llm
 from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.cardBuilder import build_card_with_healing
 from app.services.llm import is_llm_in_cooldown, LLMUnavailableError
+from app.services.quotaGuard import QuotaExceededError
 from app.schemas.chartTypes import CHART_TYPE_VALUES
+from app.services.quotaGuard import get_current_user_quota
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,13 @@ async def stream_pipeline(
             "error": f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.",
         }
         return
+    except QuotaExceededError:
+        yield {
+            "type": "phase_error",
+            "phase": "semantics",
+            "error": "Daily demo limit reached. Please try again tomorrow.",
+        }
+        return
     semantics = semantics_result.model_dump()
     yield {"type": "step_done", "phase": "semantics", "semantics": semantics}
 
@@ -75,6 +84,13 @@ async def stream_pipeline(
             "type": "phase_error",
             "phase": "plan",
             "error": f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.",
+        }
+        return
+    except QuotaExceededError:
+        yield {
+            "type": "phase_error",
+            "phase": "plan",
+            "error": "Daily demo limit reached. Please try again tomorrow.",
         }
         return
 
@@ -108,7 +124,7 @@ async def stream_pipeline(
             continue
 
         result, error = await build_card_with_healing(
-            chart, field_map, pool, existing_id=chart.get("card_id"),
+            chart, field_map, pool, table_name, existing_id=chart.get("card_id"),
         )
 
         if error:
@@ -131,9 +147,11 @@ async def stream_pipeline(
         }
 
     final_plan = {**plan, "charts": built_charts, "errors": errors}
+    quota = await get_current_user_quota()
     yield {
-        "type": "finish",
+        "type": "finish",        
         "charts_built": built_charts,
         "errors": errors,
         "plan": final_plan,
+        "quota": quota,
     }

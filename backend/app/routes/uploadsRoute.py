@@ -1,6 +1,7 @@
 import hashlib
 # from pathlib import Path
 from uuid import uuid4
+from app.config import settings
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
 from app.services.database import (
@@ -32,7 +33,25 @@ async def upload_csv(
         raise HTTPException(status_code=400, detail="Only CSV files supported")
 
     # Read bytes early — needed for checksum before any conflict checks
-    content = await file.read()
+    # Read in chunks, enforce size cap before fully loading into memory
+    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    chunks = []
+    total_size = 0
+    chunk_size = 1024 * 1024  # 1MB
+
+    while True:
+        chunk = await file.read(chunk_size)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds {settings.MAX_UPLOAD_MB}MB limit",
+            )
+        chunks.append(chunk)
+
+    content = b"".join(chunks)
     checksum = hashlib.sha256(content).hexdigest()
 
 
@@ -60,6 +79,8 @@ async def upload_csv(
 
     try:
         load_result = await load_csv_to_postgres(db, content, table_name)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}"

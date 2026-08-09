@@ -4,6 +4,7 @@ import litellm
 from opentelemetry.trace import StatusCode
 from app.config import settings
 from app.services.telemetry import get_tracer
+from app.services.quotaGuard import check_quota, increment_usage, QuotaExceededError  # noqa: F401  (QuotaExceededError re-exported for route imports)
 
 
 class LLMUnavailableError(Exception):
@@ -57,6 +58,7 @@ def is_llm_in_cooldown() -> bool:
 
 async def generate(prompt: str, stage: str = "unknown") -> str:
     _check_cooldown()
+    await check_quota()
 
     with _tracer.start_as_current_span("llm.generate") as span:
         span.set_attribute("stage", stage)
@@ -89,12 +91,14 @@ async def generate(prompt: str, stage: str = "unknown") -> str:
         span.set_attribute("model", response.model or settings.LLM_MODEL)
         span.set_attribute("input_tokens", getattr(usage, "prompt_tokens", 0) or 0)
         span.set_attribute("output_tokens", getattr(usage, "completion_tokens", 0) or 0)
-        
+
+        await increment_usage()        
         return response.choices[0].message.content.strip()
 
 
 async def generate_with_tools(messages: list[dict], tools: list[dict], stage: str = "unknown"):
     _check_cooldown()
+    await check_quota()
 
     with _tracer.start_as_current_span("llm.generate_with_tools") as span:
         span.set_attribute("stage", stage)

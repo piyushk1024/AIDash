@@ -2,6 +2,7 @@ import csv
 import asyncpg
 import io
 from pathlib import Path
+from app.config import settings
 
 NULL_VALUES = {"", "null", "none", "na", "n/a", "#n/a", "-", "?", "nan"}
 
@@ -39,6 +40,18 @@ def is_summary_row(row: dict) -> bool:
 def parse_number(v: str) -> str:
     return clean_value(v).replace(",", "").replace("%", "")
 
+def dedupe_columns(columns: list[str]) -> list[str]:
+    seen = {}
+    result = []
+    for col in columns:
+        if col not in seen:
+            seen[col] = 0
+            result.append(col)
+        else:
+            seen[col] += 1
+            result.append(f"{col}_{seen[col]}")
+    return result
+
 def infer_type(values: list[str]) -> str:
     non_empty = [v for v in values if not is_null(v)]
     if not non_empty:
@@ -70,17 +83,52 @@ async def load_csv_to_postgres(
     content: bytes,
     table_name: str,
 ) -> dict:
-    text = content.decode("utf-8-sig")
-    reader = csv.DictReader(io.StringIO(text))
-    rows = list(reader)
-    columns = reader.fieldnames or []
-    columns = [col if col.strip() else f"col_{i}" for i, col in enumerate(columns)]
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        raise ValueError("File is not valid UTF-8 text — not a readable CSV")
+
+    try:
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
+    except csv.Error:
+        raise ValueError("Could not detect a valid delimiter — file may be malformed or not a CSV")
+
+    try:
+        raw_rows = list(csv.reader(io.StringIO(text), dialect=dialect))
+    except csv.Error as e:
+        raise ValueError(f"Malformed CSV: {e}")
+
+    if not raw_rows:
+        raise ValueError("CSV is empty")
+
+    header = raw_rows[0]
+    data_rows = raw_rows[1:]
+
+    if len(header) > settings.MAX_COLUMNS:
+        raise ValueError(
+            f"CSV has {len(header)} columns, exceeds limit of {settings.MAX_COLUMNS}"
+        )
+
+    header = [col if col.strip() else f"col_{i}" for i, col in enumerate(header)]
+    # Dedupe before dict construction — DictReader would silently collapse
+    # duplicate header names here otherwise.
+    columns = dedupe_columns(header)
+
+    rows = [dict(zip(columns, r)) for r in data_rows]
 
     if not rows:
-        raise ValueError("CSV is empty")
+        raise ValueError("CSV has no data rows")
 
     rows = [r for r in rows if any(not is_null(v) for v in r.values())]
     rows = [r for r in rows if not is_blank_row(r) and not is_summary_row(r)]
+
+    if not rows:
+        raise ValueError("CSV has no usable data rows after cleaning")
+
+    if len(rows) > settings.MAX_ROWS:
+        raise ValueError(
+            f"CSV has {len(rows)} rows, exceeds limit of {settings.MAX_ROWS}"
+        )
 
     col_types = {col: infer_type([row.get(col, "") for row in rows]) for col in columns}
 
@@ -88,7 +136,6 @@ async def load_csv_to_postgres(
         f'"{col}" {TYPE_MAP[col_types[col]]}' for col in columns
     )
 
-    # Build rows as tuples for executemany — one round trip for all inserts
     def coerce(val: str, col: str):
         if is_null(val):
             return None
@@ -105,9 +152,6 @@ async def load_csv_to_postgres(
         for row in rows
     ]
 
-    # placeholders = ", ".join(f"${i+1}" for i in range(len(columns)))
-    # col_names    = ", ".join(f'"{c}"' for c in columns)
-
     async with pool.acquire() as conn:
         async with conn.transaction():
             await conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
@@ -121,5 +165,5 @@ async def load_csv_to_postgres(
     return {
         "table_name": table_name,
         "row_count":  len(rows),
-        "columns":    col_types,
+        "columns":    col_types,        
     }

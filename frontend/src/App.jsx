@@ -12,6 +12,7 @@ import Toast, { ToastProvider } from './components/steps/Toast'
 import Modal from './components/Modal'
 import AdminPage from './components/AdminPage'
 import FeedbackFab from './components/steps/FeedbackFab'
+import QuotaBadge from './components/steps/QuotaBadge'
 
 function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   const navigate = useNavigate()
@@ -206,6 +207,7 @@ function DasherApp() {
             onToggleDark={() => setDark(d => !d)}
           />
           <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
+          <QuotaBadge />
           <div className="max-w-xl mx-auto px-8 py-16">
             <h1 className="font-mono text-[10.5px] tracking-wider uppercase text-muted mb-1">
               AI-Enabled Dashboarding
@@ -296,6 +298,7 @@ function DasherApp() {
             <LaunchCard dasher={dasher} onDone={handleLaunchDone} />
           </div>
         )}
+           <QuotaBadge />
       </div>
     </div>
   )

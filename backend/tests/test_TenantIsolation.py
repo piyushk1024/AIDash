@@ -13,6 +13,8 @@ from app.routes.agentRoute import run_agent_dashboard, get_agent_dashboard_repor
 from app.routes.profilerRoute import profile_csv_route
 from app.routes.cleanupRoute import delete_dataset_by_id
 
+from app.services.sqlGuard import validate_sql
+
 # fake test variables
 
 os.environ.setdefault("LLM_API_KEY", "test-key")
@@ -229,3 +231,39 @@ async def test_delete_dataset_blocks_non_owner():
         await assert_403(delete_dataset_by_id(
             dataset_id=DATASET_ID, db=MagicMock(), current_user=make_mock_attacker(),
         ))
+# ── sqlGuard table allowlist (cross-tenant SQL injection via LLM) ──────────
+
+def test_validate_sql_blocks_cross_table_select():
+    with pytest.raises(ValueError):
+        validate_sql("SELECT * FROM other_users_table", "my_table")
+
+
+def test_validate_sql_allows_matching_table():
+    validate_sql('SELECT * FROM "my_table"', "my_table")
+
+
+def test_validate_sql_blocks_cross_table_in_join():
+    with pytest.raises(ValueError):
+        validate_sql(
+            'SELECT a.* FROM "my_table" a JOIN "other_users_table" b ON a.id = b.id',
+            "my_table",
+        )
+
+
+def test_validate_sql_allows_cte_referencing_own_table():
+    validate_sql(
+        'WITH filtered AS (SELECT * FROM "my_table" WHERE amount > 0) '
+        'SELECT * FROM filtered',
+        "my_table",
+    )
+
+
+def test_validate_sql_blocks_hostile_business_hint_injection():
+    # Simulates an LLM prompt-injected via a hostile business_hint or CSV
+    # cell content into emitting a structurally valid but cross-tenant SQL.
+    injected_sql = (
+        "SELECT * FROM my_table UNION ALL "
+        "SELECT * FROM attacker_target_table"
+    )
+    with pytest.raises(ValueError):
+        validate_sql(injected_sql, "my_table")

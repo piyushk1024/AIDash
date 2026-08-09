@@ -13,6 +13,7 @@ from app.services.llmClient import infer_semantics_with_llm
 from app.services.pipelineOrchestrator import stream_pipeline
 from app.services.agentOrchestrator import stream_agent
 from app.services.llm import LLMUnavailableError
+from app.services.quotaGuard import QuotaExceededError
 from app.services.database import (
     persist_dataset_metadata,
     persist_profile_json,
@@ -182,6 +183,14 @@ async def launch_dataset_stream(
                 "type": "phase_error",
                 "error": f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.",
             })
+        except QuotaExceededError:
+            logger.exception("Launch stream failed for dataset %s — daily quota reached", dataset_id)
+            yield _sse_format({
+                "type": "phase_error",
+                "error": "Daily demo limit reached. Please try again tomorrow.",
+            })
+
+
         except Exception:
             logger.exception("Launch stream failed for dataset %s", dataset_id)
             yield _sse_format({

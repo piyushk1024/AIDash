@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from app.dependencies import get_db, get_current_user, require_admin
-from app.services.database import create_feedback, get_admin_stats, get_admin_feedback
+from app.services.database import create_feedback, get_admin_stats, get_admin_feedback, set_user_daily_call_limit
 from typing import Literal
 router = APIRouter()
 
@@ -34,3 +34,18 @@ async def admin_feedback(
     current_user=Depends(require_admin),
 ):
     return await get_admin_feedback(db)
+class QuotaUpdateRequest(BaseModel):
+    daily_call_limit: int | None  # null = reset to global default, -1 = unlimited
+
+
+@router.patch("/admin/users/{username}/quota")
+async def update_user_quota(
+    username: str,
+    body: QuotaUpdateRequest,
+    db=Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    updated = await set_user_daily_call_limit(db, username, body.daily_call_limit)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    return updated

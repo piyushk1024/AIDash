@@ -2,6 +2,7 @@ from fastapi import Depends, Request, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError
 from app.services.auth import decode_access_token
+from app.services.quotaGuard import set_current_user_id
 import asyncpg
 
 bearer_scheme = HTTPBearer()
@@ -19,6 +20,7 @@ async def get_current_user(
         payload = decode_access_token(credentials.credentials)
     except InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
+    set_current_user_id(payload["sub"])
     return AuthUser(
         user_id=payload["sub"],
         username=payload["username"],

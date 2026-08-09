@@ -10,6 +10,7 @@ async def build_card_with_healing(
     chart: dict,
     field_map: dict,
     pool,
+    table_name: str,
     existing_id: str | None = None,
 ) -> tuple[dict | None, dict | None]:
     """
@@ -33,12 +34,12 @@ async def build_card_with_healing(
     healed = False
 
     try:
-        query_result = await execute_chart_query(pool, chart)
+        query_result = await execute_chart_query(pool, chart, table_name)
     except Exception as e:
         logger.warning(f"Chart query failed for '{chart.get('chart_title')}': {e}")
         try:
             chart = await heal_chart_spec(chart, str(e), field_map)
-            query_result = await execute_chart_query(pool, chart)
+            query_result = await execute_chart_query(pool, chart, table_name)
             healed = True
         except Exception as e2:
             logger.error("Chart '%s' failed permanently. error=%s, heal_error=%s",

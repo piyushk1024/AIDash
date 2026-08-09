@@ -79,7 +79,7 @@ async def add_nl_chart(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Couldn't build a valid chart from that request: {e}")
 
-    result, error = await build_card_with_healing(chart_spec, field_map, db)
+    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name)
     if error:
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
@@ -121,7 +121,7 @@ async def edit_nl_chart(
     except LLMUnavailableError as e:
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
-    result, error = await build_card_with_healing(chart_spec, field_map, db, existing_id=card_id)
+    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name, existing_id=card_id)
     if error:
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)

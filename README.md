@@ -77,14 +77,7 @@ differentiator between Standard and Agentic mode.
 
 **O(columns) not O(rows) LLM cost**
 The LLM receives a statistical profile, not raw rows. Token usage scales with
-schema width, not dataset size. Validated across multiple datasets:
-
-| Dataset | Rows | Token ratio vs naive | Cost ratio |
-|---|---|---|---|
-| IPL deliveries | 260,920 | 1x vs 4.3x | 1x vs 3.5x |
-| API error logs | 220,000 | 1x vs 9.9x | 1x vs 8.0x |
-
-Dashboard cost as low as $0.002 regardless of row count.
+schema width, not dataset size. 
 
 **AST-based SQL validation**
 Every LLM-generated query is parsed to an AST via sqlglot before execution, not

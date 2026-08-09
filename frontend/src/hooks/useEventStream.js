@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { getToken } from '../lib/api'
+import { setQuotaState } from '../lib/quotaStore'
 
 // Parses a raw SSE buffer into individual JSON events.
 // Events are separated by a blank line; only "data: " lines are read.
@@ -73,6 +74,9 @@ export function useEventStream() {
 
           if (event.type === 'phase_error') {
             setStreamError(event.error || 'Agent run failed')
+          }
+          if (event.quota) {
+            setQuotaState(event.quota)
           }
         }
       }
