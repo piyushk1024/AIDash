@@ -10,12 +10,13 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
-def create_access_token(user_id: str, username: str, role: str) -> str:
+def create_access_token(user_id: str, username: str, role: str, is_privileged: bool ) -> str:
     expires = datetime.now(timezone.utc) + timedelta(hours=settings.JWT_EXPIRY_HOURS)
     payload = {
         "sub": user_id,
         "username": username,
         "role": role,
+        "is_privileged": is_privileged,
         "exp": expires,
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)

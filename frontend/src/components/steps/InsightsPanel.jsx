@@ -42,8 +42,8 @@ export default function InsightsPanel({ datasetId }) {
         shownCount: 1,
       }, ...prev.map(e => ({ ...e, expanded: false }))])
       setPrompt('')
-    } catch {
-      setError('Something went wrong. Try again.')
+    } catch (e) {
+      setError(e.message || 'Something went wrong. Try again.')
     } finally {
       setLoading(false)
     }

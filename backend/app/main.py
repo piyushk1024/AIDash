@@ -3,7 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.services.database import create_pool
-from app.services.quotaGuard import init_quota_guard, QuotaExceededError, get_last_quota_status
+from app.services.quotaGuard import init_quota_guard, QuotaExceededError
 from app.routes import (
     uploadsRoute, profilerRoute, semanticsRoute,
     dashboardRoute, cleanupRoute,
@@ -13,6 +13,9 @@ from app.routes import (
 from app.services.migrationRunner import run_migrations
 from app.services.telemetry import setup_telemetry, shutdown_telemetry
 from app.config import settings
+from app.services.auth import decode_access_token
+from app.services.quotaGuard import get_quota_status
+from jwt.exceptions import InvalidTokenError
 
 
 import logging
@@ -51,16 +54,6 @@ app.add_middleware(
     expose_headers=["X-Quota-Remaining", "X-Quota-Limit"],
 )
 
-@app.middleware("http")
-async def add_quota_headers(request, call_next):
-    response = await call_next(request)
-    status = get_last_quota_status()
-    if status and not status["unlimited"]:
-        response.headers["X-Quota-Remaining"] = str(status["remaining"])
-        response.headers["X-Quota-Limit"] = str(status["limit"])
-    return response
-
-
 @app.exception_handler(QuotaExceededError)
 async def quota_exceeded_handler(request, exc):
     return JSONResponse(
@@ -76,6 +69,23 @@ async def security_headers(request: Request, call_next):
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     if _is_prod:
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+@app.middleware("http")
+async def add_quota_headers(request, call_next):
+    response = await call_next(request)
+
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            payload = decode_access_token(auth_header[7:])
+            status = await get_quota_status(payload["sub"])
+            if not status["unlimited"]:
+                response.headers["X-Quota-Remaining"] = str(status["remaining"])
+                response.headers["X-Quota-Limit"] = str(status["limit"])
+        except InvalidTokenError:
+            pass
+
     return response
 
 

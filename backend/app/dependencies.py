@@ -8,10 +8,11 @@ import asyncpg
 bearer_scheme = HTTPBearer()
 
 class AuthUser:
-    def __init__(self, user_id: str, username: str, role: str):
+    def __init__(self, user_id: str, username: str, role: str, is_privileged: bool = False):
         self.user_id = user_id
         self.username = username
         self.role = role
+        self.is_privileged = is_privileged
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
@@ -25,6 +26,7 @@ async def get_current_user(
         user_id=payload["sub"],
         username=payload["username"],
         role=payload["role"],
+        is_privileged=payload.get("is_privileged", False),
     )
 async def require_admin(current_user: AuthUser = Depends(get_current_user)) -> AuthUser:
     if current_user.role != "admin":

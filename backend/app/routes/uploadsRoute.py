@@ -9,7 +9,7 @@ from app.services.database import (
     get_dataset_metadata,
     get_dataset_by_checksum,
     delete_dataset,    
-    list_datasets_for_user
+    list_datasets_for_user    
 )
 from app.dependencies import get_db, require_editor, get_current_user
 
@@ -34,7 +34,9 @@ async def upload_csv(
 
     # Read bytes early — needed for checksum before any conflict checks
     # Read in chunks, enforce size cap before fully loading into memory
-    max_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    # Privileged users get a higher size ceiling (not unbounded — avoids OOM risk on a live demo)
+    size_multiplier = 4 if current_user.is_privileged else 1
+    max_bytes = settings.MAX_UPLOAD_MB * size_multiplier * 1024 * 1024    
     chunks = []
     total_size = 0
     chunk_size = 1024 * 1024  # 1MB
@@ -78,7 +80,7 @@ async def upload_csv(
     table_name = sanitise_table_name(file.filename)
 
     try:
-        load_result = await load_csv_to_postgres(db, content, table_name)
+        load_result = await load_csv_to_postgres(db, content, table_name, is_privileged=current_user.is_privileged)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

@@ -295,7 +295,7 @@ function DasherApp() {
           )
         ) : (
           <div className="max-w-5xl mx-auto px-8 py-16">
-            <LaunchCard dasher={dasher} onDone={handleLaunchDone} />
+            <LaunchCard dasher={dasher} onDone={handleLaunchDone} user={auth.user}/>
           </div>
         )}
            <QuotaBadge />

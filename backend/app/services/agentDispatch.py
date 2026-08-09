@@ -158,7 +158,7 @@ async def dispatch_edit_existing_chart(
     chart_spec = _extract_chart_spec(tool_args)
 
     try:
-        validate_sql(chart_spec["sql"], context=chart_spec["chart_title"])
+        validate_sql(chart_spec["sql"], table_name, context=chart_spec["chart_title"])
     except ValueError:
         observation = {"error": "SQL validation failed."}
         trace_entry = {

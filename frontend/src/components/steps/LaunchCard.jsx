@@ -6,14 +6,14 @@ import { api } from '../../lib/api'
 const fieldLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted"
 const fieldInput = "w-full bg-surface border border-muted rounded-control px-3 py-2.5 font-mono text-[13px] text-fg placeholder-muted/60 focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
 
-const MAX_FILE_MB = 30
+const MAX_FILE_MB = 25
 const MAX_ROWS = 100_000
 const MAX_COLUMNS = 50
 // rebuildContext (optional): { name, comment, hint, mode }
 // When present: dropzone/name/comment are disabled (no re-upload), mode +
 // hint stay editable, and submitting re-infers/rebuilds on the existing
 // dataset instead of launching a new one.
-export default function LaunchCard({ dasher, onDone, rebuildContext }) {
+export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
   const { applyLaunchEvents, applyAgentEvents, inferSemantics, generatePlan, createDashboard, datasetId, agentResult } = dasher
   const isRebuild = Boolean(rebuildContext)
 
@@ -36,6 +36,7 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
   const inputRef = useRef(null)
 
   const { events, streaming, streamError, startStream, reset } = useEventStream()
+  const maxFileMb = user?.is_privileged ? MAX_FILE_MB * 4 : MAX_FILE_MB
 
   function handleDrop(e) {
     e.preventDefault()
@@ -43,8 +44,8 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
     if (isRebuild) return
     const dropped = e.dataTransfer.files[0]
     if (!dropped?.name.endsWith('.csv')) return
-    if (dropped.size > MAX_FILE_MB * 1024 * 1024) {
-      setLocalError(`File exceeds ${MAX_FILE_MB}MB limit`)
+    if (dropped.size > maxFileMb * 1024 * 1024) {
+      setLocalError(`File exceeds ${maxFileMb}MB limit`)
       return
     }
     setLocalError(null)
@@ -55,8 +56,8 @@ export default function LaunchCard({ dasher, onDone, rebuildContext }) {
     if (isRebuild) return
     const picked = e.target.files[0]
     if (!picked) return
-    if (picked.size > MAX_FILE_MB * 1024 * 1024) {
-      setLocalError(`File exceeds ${MAX_FILE_MB}MB limit`)
+    if (picked.size > maxFileMb * 1024 * 1024) {
+      setLocalError(`File exceeds ${maxFileMb}MB limit`)
       e.target.value = ''
       return
     }

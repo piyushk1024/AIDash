@@ -150,7 +150,7 @@ async def generate_insights(
         sql = result["sql"]
 
         try:
-            validate_sql(sql, context="insight query")
+            validate_sql(sql, table_name, context="insight query")
             query_results = await execute_sql_fn(sql)
         except Exception as e:
             # One retry: feed the error back and let the LLM fix the SQL,

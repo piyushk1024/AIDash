@@ -36,7 +36,7 @@ export function useAuth() {
 
   const login = useCallback(async (username, password) => {
     const data = await api.login(username, password)
-    persist(data.access_token, { username: data.username, role: data.role })
+    persist(data.access_token, { username: data.username, role: data.role, is_privileged: data.is_privileged })
   }, [])
 
   const register = useCallback(async (username, password) => {

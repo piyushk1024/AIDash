@@ -47,12 +47,15 @@ def init_quota_guard(pool: asyncpg.Pool) -> None:
 def set_current_user_id(user_id: str) -> None:
     _current_user_id.set(user_id)
 
-
 async def get_quota_status(user_id: str) -> dict:
     async with _pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT daily_call_limit FROM users WHERE user_id = $1", user_id
+            "SELECT daily_call_limit, is_privileged FROM users WHERE user_id = $1", user_id
         )
+
+        if row and row["is_privileged"]:
+            return {"limit": None, "calls_used": None, "remaining": None, "unlimited": True}
+
         limit = row["daily_call_limit"] if row else None
 
         if limit == -1:
@@ -77,7 +80,6 @@ async def get_quota_status(user_id: str) -> dict:
             "remaining": max(limit - calls_used, 0),
             "unlimited": False,
         }
-
 
 async def check_quota() -> None:
     user_id = _current_user_id.get()

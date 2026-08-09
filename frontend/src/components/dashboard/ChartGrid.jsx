@@ -306,8 +306,12 @@ export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode 
   }
 
   async function handleAdd(value, selectedColumns) {
-    const result = await api.addNLChart(datasetId, value, selectedColumns, mode)
-    onCardAdded(result)
+    try {
+      const result = await api.addNLChart(datasetId, value, selectedColumns, mode)
+      onCardAdded(result)
+    } catch (e) {
+      toast.error(e.message || 'Failed to add chart. Try again.')
+    }
   }
 
   function renderCard(card) {

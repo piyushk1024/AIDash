@@ -30,5 +30,7 @@ async def login(body: LoginRequest, db=Depends(get_db)):
     if not user or not await run_in_threadpool(verify_password, body.password, user["hashed_password"]):
         # Same error for both cases — don't reveal whether the username exists
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    token = create_access_token(user["user_id"], user["username"], user["role"])
-    return {"access_token": token, "token_type": "bearer", "username": user["username"],"role": user["role"],}
+    token = create_access_token(user["user_id"], user["username"], user["role"], user["is_privileged"])
+    return {"access_token": token, "token_type": "bearer",
+            "username": user["username"],"role": user["role"],
+            "is_privileged": user["is_privileged"],}

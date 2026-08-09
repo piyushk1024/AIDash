@@ -82,6 +82,7 @@ async def load_csv_to_postgres(
     pool: asyncpg.Pool,
     content: bytes,
     table_name: str,
+    is_privileged: bool = False,
 ) -> dict:
     try:
         text = content.decode("utf-8-sig")
@@ -125,7 +126,7 @@ async def load_csv_to_postgres(
     if not rows:
         raise ValueError("CSV has no usable data rows after cleaning")
 
-    if len(rows) > settings.MAX_ROWS:
+    if not is_privileged and len(rows) > settings.MAX_ROWS:
         raise ValueError(
             f"CSV has {len(rows)} rows, exceeds limit of {settings.MAX_ROWS}"
         )

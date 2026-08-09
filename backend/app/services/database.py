@@ -353,7 +353,7 @@ async def create_user(pool: asyncpg.Pool, username: str, hashed_password: str, r
 
 async def get_user_by_username(pool: asyncpg.Pool, username: str) -> dict | None:
     row = await pool.fetchrow(
-        "SELECT user_id, username, hashed_password, role FROM users WHERE LOWER(username)  = $1",
+        "SELECT user_id, username, hashed_password, role, is_privileged FROM users WHERE LOWER(username)  = $1",
         username,
     )
     return dict(row) if row else None
@@ -525,5 +525,15 @@ async def set_user_daily_call_limit(pool: asyncpg.Pool, username: str, daily_cal
         RETURNING user_id, username, daily_call_limit
         """,
         daily_call_limit, username,
+    )
+    return dict(row) if row else None
+async def set_user_privilege(pool: asyncpg.Pool, username: str, is_privileged: bool) -> dict | None:
+    row = await pool.fetchrow(
+        """
+        UPDATE users SET is_privileged = $1
+        WHERE LOWER(username) = LOWER($2)
+        RETURNING user_id, username, is_privileged
+        """,
+        is_privileged, username,
     )
     return dict(row) if row else None

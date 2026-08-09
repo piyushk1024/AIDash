@@ -59,7 +59,7 @@ General constraints:
 Corrected chart:
 """
 
-async def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
+async def heal_chart_spec(chart: dict, error: str, field_map: dict, table_name: str) -> dict:
     field_reference = "\n".join(
         f"  - {col}: {meta['base_type']}"
         for col, meta in field_map.items()
@@ -81,7 +81,7 @@ async def heal_chart_spec(chart: dict, error: str, field_map: dict) -> dict:
     healed = json.loads(raw)
     healed = {**chart, **healed}
 
-    validate_sql(healed["sql"], context=healed.get("chart_title", ""))
+    validate_sql(healed["sql"], table_name, context=healed.get("chart_title", ""))
     if healed.get("chart_type") not in CHART_TYPE_VALUES:
         raise ValueError(f"Healed chart_type '{healed.get('chart_type')}' is not a valid chart type")
 

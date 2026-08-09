@@ -134,4 +134,6 @@ async def generate_with_tools(messages: list[dict], tools: list[dict], stage: st
         span.set_attribute("input_tokens", getattr(usage, "prompt_tokens", 0) or 0)
         span.set_attribute("output_tokens", getattr(usage, "completion_tokens", 0) or 0)
 
+        await increment_usage()
+        
         return response.choices[0].message

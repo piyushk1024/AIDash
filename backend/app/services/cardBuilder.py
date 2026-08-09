@@ -38,7 +38,7 @@ async def build_card_with_healing(
     except Exception as e:
         logger.warning(f"Chart query failed for '{chart.get('chart_title')}': {e}")
         try:
-            chart = await heal_chart_spec(chart, str(e), field_map)
+            chart = await heal_chart_spec(chart, str(e), field_map, table_name)
             query_result = await execute_chart_query(pool, chart, table_name)
             healed = True
         except Exception as e2:

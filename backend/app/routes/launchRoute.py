@@ -59,7 +59,7 @@ async def launch_dataset_stream(
 
     table_name = sanitise_table_name(file.filename)
     try:
-        load_result = await load_csv_to_postgres(db, content, table_name)
+        load_result = await load_csv_to_postgres(db, content, table_name, is_privileged=current_user.is_privileged)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load CSV into Postgres: {str(e)}")
 
