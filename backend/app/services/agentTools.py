@@ -80,20 +80,33 @@ TOOL_SCHEMAS = [
                     "series_alias": {
                         "type": "string",
                         "description": (
-                            "Optional. Only for bar/row charts. Exact alias of a second "
+                            "Optional. Only for bar/row/line/scatter/histogram  charts. Exact alias of a second "
                             "dimension to group or stack by within each x-axis category. "
                             "Use this instead of building separate charts when the goal "
                             "requires comparing across two dimensions at once."
                         ),
                     },
+                    "source_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the source category column in the SQL.",
+                    },
+                    "target_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the target category column in the SQL.",
+                    },
+                    "value_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the count/weight column in the SQL.",
+                    },
                     "viz_params": {
                         "type": "object",
                         "description": (
-                            "Required for gauge, funnel, waterfall, and map chart "
-                            "types. A dict of Plotly trace fields matching what that "
-                            "chart type needs (e.g. gauge steps/bands for gauge). "
-                            "You decide the values yourself, typically by computing "
-                            "them via inspect_data first. Omit for all other chart types."
+                            "Required for gauge and funnel chart types only. A dict of "
+                            "Plotly trace fields matching what that chart type needs "
+                            "(e.g. gauge axis range, funnel x/y arrays). You decide the "
+                            "values yourself, typically by computing them via inspect_data "
+                            "first. Omit for all other chart types, including sankey — "
+                            "sankey uses source_alias/target_alias/value_alias instead."
                         ),
                     },
                     "reasoning": {
@@ -150,11 +163,23 @@ TOOL_SCHEMAS = [
                     },
                     "series_alias": {
                         "type": "string",
-                        "description": "Optional. Only for bar/row charts. Exact alias of a second dimension to group or stack by.",
+                        "description": "Optional. Only for bar/row/line/scatter/histogram charts. Exact alias of a second dimension to group or stack by.",
+                    },
+                    "source_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the source category column in the SQL.",
+                    },
+                    "target_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the target category column in the SQL.",
+                    },
+                    "value_alias": {
+                        "type": "string",
+                        "description": "Required for sankey only. Exact alias of the count/weight column in the SQL.",
                     },
                     "viz_params": {
                         "type": "object",
-                        "description": "Required for gauge/funnel/waterfall/map chart types. Omit for all other chart types.",
+                        "description": "Required for gauge/funnel chart types only. Omit for all other chart types, including sankey.",
                     },
                     "reasoning": {
                         "type": "string",

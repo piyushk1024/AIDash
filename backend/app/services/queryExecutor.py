@@ -8,15 +8,14 @@ from app.schemas.chartTypes import (
     PASSTHROUGH_TYPES,
     HISTOGRAM_TYPES,
     DISTRIBUTION_TYPES,
+    SANKEY_TYPES,
 )
 
 logger = logging.getLogger(__name__)
 
 _PASSTHROUGH_PLOTLY_TYPE = {
     ChartType.GAUGE: "indicator",
-    ChartType.FUNNEL: "funnel",
-    ChartType.WATERFALL: "waterfall",
-    ChartType.MAP: "choroplethmapbox",
+    ChartType.FUNNEL: "funnel",    
 }
 
 ROW_CHART_CAP = 15
@@ -94,12 +93,8 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
     title = chart.get("chart_title", "")
     layout = {"title": {"text": title}}
 
-    if chart_type in PASSTHROUGH_TYPES:
-        trace = _passthrough_trace(chart_type, chart, title)
-        return {"data": [trace], "layout": layout}
-
     if not rows:
-        raise ValueError(f"Query returned no rows ({title})")
+            raise ValueError(f"Query returned no rows ({title})")
 
     if chart_type == ChartType.SCALAR:
         value = next(iter(rows[0].values()))
@@ -117,15 +112,21 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
     if chart_type in MEASURE_PAIR_TYPES:
         x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
         _require_aliases(chart_type, x_alias, y_alias, title)
-        trace = {
-            "type": "scatter",
-            "mode": "markers",
-            "x": [_row_value(r, x_alias, title) for r in rows],
-            "y": [_row_value(r, y_alias, title) for r in rows],
-        }
+        series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
+
+        if series_alias:
+            data = _grouped_traces(chart_type, rows, x_alias, y_alias, series_alias, title)
+        else:
+            trace = {
+                "type": "scatter",
+                "mode": "markers",
+                "x": [_row_value(r, x_alias, title) for r in rows],
+                "y": [_row_value(r, y_alias, title) for r in rows],
+            }
+            data = [trace]
         layout["xaxis"] = {"title": {"text": x_alias}}
         layout["yaxis"] = {"title": {"text": y_alias}}
-        return {"data": [trace], "layout": layout}
+        return {"data": data, "layout": layout}
 
     if chart_type in DIMENSION_MEASURE_TYPES:
         x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
@@ -154,9 +155,18 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         x_alias = chart.get("x_alias")
         if not x_alias:
             raise ValueError(f"x_alias required for chart type '{chart_type.value}' ({title})")
-        trace = {"type": "histogram", "x": [_row_value(r, x_alias, title) for r in rows]}
+        series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
+
+        if series_alias:
+            data = _grouped_traces(chart_type, rows, x_alias, None, series_alias, title)
+            for trace in data:
+                trace["opacity"] = 0.65
+            layout["barmode"] = "overlay"
+        else:
+            x = [_row_value(r, x_alias, title) for r in rows]
+            data = [{"type": "histogram", "x": x}]
         layout["xaxis"] = {"title": {"text": x_alias}}
-        return {"data": [trace], "layout": layout}
+        return {"data": data, "layout": layout}
 
     if chart_type in DISTRIBUTION_TYPES:
         y_alias = chart.get("y_alias")
@@ -169,6 +179,14 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             layout["xaxis"] = {"title": {"text": x_alias}}
         layout["yaxis"] = {"title": {"text": y_alias}}
         return {"data": [trace], "layout": layout}
+    
+    if chart_type in SANKEY_TYPES:
+        trace = _build_sankey_trace(rows, chart, title)
+        return {"data": [trace], "layout": layout}
+    
+    if chart_type in PASSTHROUGH_TYPES:
+        trace = trace = _passthrough_trace(chart_type, chart, rows, title)
+        return {"data": [trace], "layout": layout}  
 
     raise ValueError(f"Unsupported chart type '{chart_type.value}' ({title})")
 
@@ -186,10 +204,13 @@ def _single_trace(chart_type: ChartType, x: list, y: list) -> dict:
         return {"type": "scatter", "mode": "lines+markers", "x": x, "y": y}
     if chart_type == ChartType.PIE:
         return {"type": "pie", "labels": x, "values": y}
+    if chart_type == ChartType.SCATTER:
+        return {"type": "scatter", "mode": "markers", "x": x, "y": y}
+    if chart_type == ChartType.HISTOGRAM:
+        return {"type": "histogram", "x": x}
     raise ValueError(f"No trace builder for chart type '{chart_type.value}'")
 
-
-def _grouped_traces(chart_type: ChartType, rows: list[dict], x_alias: str, y_alias: str, series_alias: str, title: str) -> list[dict]:
+def _grouped_traces(chart_type: ChartType, rows: list[dict], x_alias: str, y_alias: str | None, series_alias: str, title: str) -> list[dict]:
     # One trace per distinct series value, preserving first-seen order.
     series_order: list = []
     grouped: dict = {}
@@ -204,17 +225,79 @@ def _grouped_traces(chart_type: ChartType, rows: list[dict], x_alias: str, y_ali
     for key in series_order:
         group_rows = grouped[key]
         x = [_row_value(r, x_alias, title) for r in group_rows]
-        y = [_row_value(r, y_alias, title) for r in group_rows]
+        y = [_row_value(r, y_alias, title) for r in group_rows] if y_alias else None
         trace = _single_trace(chart_type, x, y)
         trace["name"] = str(key)
         traces.append(trace)
     return traces
 
+def _build_sankey_trace(rows: list[dict], chart: dict, title: str) -> dict:
+    source_alias = chart.get("source_alias")
+    target_alias = chart.get("target_alias")
+    value_alias = chart.get("value_alias")
+    if not source_alias or not target_alias or not value_alias:
+        raise ValueError(
+            f"source_alias/target_alias/value_alias required for sankey ({title})"
+        )
 
-def _passthrough_trace(chart_type: ChartType, chart: dict, title: str) -> dict:
+    # Dedup labels across both columns, preserving first-seen order —
+    # node.label needs one combined list, link.source/target are indices
+    # into it, not the raw category strings.
+    label_index: dict = {}
+    labels: list = []
+    for r in rows:
+        for alias in (source_alias, target_alias):
+            val = _row_value(r, alias, title)
+            if val not in label_index:
+                label_index[val] = len(labels)
+                labels.append(val)
+
+    source_idx = [label_index[_row_value(r, source_alias, title)] for r in rows]
+    target_idx = [label_index[_row_value(r, target_alias, title)] for r in rows]
+    values = [_row_value(r, value_alias, title) for r in rows]
+
+    return {
+        "type": "sankey",
+        "node": {"label": labels},
+        "link": {"source": source_idx, "target": target_idx, "value": values},
+    }
+
+_PASSTHROUGH_REQUIRED_KEYS = {
+    ChartType.GAUGE: ("domain", "gauge","value"),
+    ChartType.FUNNEL: ("x", "y"),    
+}
+
+
+def _substitute_row_values(node, row: dict):
+    # LLM authors viz_params before the query runs, so it can't know
+    # computed values (e.g. AVG(price)) at write time — it writes the
+    # SQL alias name as a string placeholder instead (same pattern as
+    # x_alias/y_alias elsewhere). Walk the structure and swap any string
+    # leaf that matches a row column name for the real computed value.
+    if isinstance(node, dict):
+        return {k: _substitute_row_values(v, row) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_substitute_row_values(v, row) for v in node]
+    if isinstance(node, str) and node in row:
+        return row[node]
+    return node
+
+
+def _passthrough_trace(chart_type: ChartType, chart: dict, rows: list[dict], title: str) -> dict:
     viz_params = chart.get("viz_params")
     if not viz_params or not isinstance(viz_params, dict):
         raise ValueError(f"viz_params (non-empty dict) required for chart type '{chart_type.value}' ({title})")
+
+    viz_params = _substitute_row_values(viz_params, rows[0])
+
+    required = _PASSTHROUGH_REQUIRED_KEYS[chart_type]
+    missing = [k for k in required if k not in viz_params]
+    if missing:
+        raise ValueError(
+            f"viz_params missing required key(s) {missing} for chart type "
+            f"'{chart_type.value}' ({title}). Expected keys: {required}."
+        )
+
     trace = dict(viz_params)
     trace.setdefault("type", _PASSTHROUGH_PLOTLY_TYPE[chart_type])
     return trace

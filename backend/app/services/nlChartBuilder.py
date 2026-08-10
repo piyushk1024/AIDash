@@ -43,8 +43,11 @@ Return ONLY a JSON object with exactly these fields:
   "sql": "SELECT ...",
   "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
   "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
-  "series_alias": "optional — second dimension to group/stack by, only for bar/row",
-  "viz_params": "optional dict — required for gauge/funnel/waterfall/pivot/map, omit otherwise",
+  "series_alias": "optional — second dimension to group/stack by, only for bar/row/line/scatter/histogram",
+  "source_alias": "optional — required for sankey only, exact alias of the source category column",
+  "target_alias": "optional — required for sankey only, exact alias of the target category column",
+  "value_alias": "optional — required for sankey only, exact alias of the count/weight column",
+  "viz_params": "optional dict — required for gauge/funnel only, omit otherwise (including for sankey)",
   "reasoning": "one sentence explaining what this chart shows"
 }}
 

@@ -73,8 +73,7 @@ function PublicChartCard({ chart }) {
     autosize: true,
     margin: { t: 32, r: 16, b: 60, l: 60 },
     xaxis: { automargin: true, ...chart.spec.layout?.xaxis },
-    yaxis: { automargin: true, ...chart.spec.layout?.yaxis },
-    ...chart.spec.layout,
+    yaxis: { automargin: true, ...chart.spec.layout?.yaxis },    
   }
 
   return (
