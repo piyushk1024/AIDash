@@ -88,6 +88,19 @@ def _row_value(row: dict, alias: str, title: str):
         )
     return row[alias]
 
+def _axis_title(chart: dict, label_key: str, alias_fallback: str | None) -> dict:
+    # Prefers the LLM-authored x_label/y_label (human-readable, can carry
+    # units) over the raw SQL alias. Falls back to the alias so no existing
+    # plan breaks if the label field is absent — same backward-compat
+    # pattern as every other optional chart field (series_alias, etc.).
+    label = chart.get(label_key)
+    return {"title": {"text": label or alias_fallback}}
+def _round_if_float(value, ndigits: int = 2):
+    """Round floats for display; leave ints, strings, dates, None untouched."""
+    if isinstance(value, float):
+        return round(value, ndigits)
+    return value
+
 def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
     chart_type = ChartType(chart["chart_type"])
     title = chart.get("chart_title", "")
@@ -97,7 +110,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             raise ValueError(f"Query returned no rows ({title})")
 
     if chart_type == ChartType.SCALAR:
-        value = next(iter(rows[0].values()))
+        value = _round_if_float(next(iter(rows[0].values())))
         return {"data": [{"type": "indicator", "mode": "number", "value": value}], "layout": layout}
 
     if chart_type == ChartType.TABLE:
@@ -105,7 +118,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         trace = {
             "type": "table",
             "header": {"values": columns},
-            "cells": {"values": [[row[col] for row in rows] for col in columns]},
+            "cells": {"values": [[_round_if_float(row[col]) for row in rows] for col in columns]},
         }
         return {"data": [trace], "layout": layout}
 
@@ -124,8 +137,8 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
                 "y": [_row_value(r, y_alias, title) for r in rows],
             }
             data = [trace]
-        layout["xaxis"] = {"title": {"text": x_alias}}
-        layout["yaxis"] = {"title": {"text": y_alias}}
+        layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
+        layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": data, "layout": layout}
 
     if chart_type in DIMENSION_MEASURE_TYPES:
@@ -144,11 +157,14 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         # ROW charts flip x/y internally (see _single_trace) — axis titles
         # follow the same swap so labels stay on the correct axis.
         if chart_type == ChartType.ROW:
-            layout["xaxis"] = {"title": {"text": y_alias}}
-            layout["yaxis"] = {"title": {"text": x_alias}}
+            # ROW flips x/y in the trace itself (see _single_trace) — the
+            # label follows the same swap, since y_label describes the
+            # measure and ROW plots the measure on the x-axis.
+            layout["xaxis"] = _axis_title(chart, "y_label", y_alias)
+            layout["yaxis"] = _axis_title(chart, "x_label", x_alias)
         elif chart_type != ChartType.PIE:
-            layout["xaxis"] = {"title": {"text": x_alias}}
-            layout["yaxis"] = {"title": {"text": y_alias}}
+            layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
+            layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": data, "layout": layout}
 
     if chart_type in HISTOGRAM_TYPES:
@@ -165,7 +181,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         else:
             x = [_row_value(r, x_alias, title) for r in rows]
             data = [{"type": "histogram", "x": x}]
-        layout["xaxis"] = {"title": {"text": x_alias}}
+        layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
         return {"data": data, "layout": layout}
 
     if chart_type in DISTRIBUTION_TYPES:
@@ -176,8 +192,8 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         x_alias = chart.get("x_alias")
         if x_alias:
             trace["x"] = [_row_value(r, x_alias, title) for r in rows]
-            layout["xaxis"] = {"title": {"text": x_alias}}
-        layout["yaxis"] = {"title": {"text": y_alias}}
+            layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
+        layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": [trace], "layout": layout}
     
     if chart_type in SANKEY_TYPES:

@@ -43,6 +43,8 @@ Return ONLY a JSON object with exactly these fields:
   "sql": "SELECT ...",
   "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
   "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
+  "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
+  "y_label": "optional — display axis title for y_alias, same rule as x_label",
   "series_alias": "optional — second dimension to group/stack by, only for bar/row/line/scatter/histogram",
   "source_alias": "optional — required for sankey only, exact alias of the source category column",
   "target_alias": "optional — required for sankey only, exact alias of the target category column",

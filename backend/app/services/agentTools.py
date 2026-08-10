@@ -77,6 +77,14 @@ TOOL_SCHEMAS = [
                         "type": "string",
                         "description": "Exact alias of the measure column in the SQL. Omit for scalar/table/passthrough types.",
                     },
+                    "x_label": {
+                        "type": "string",
+                        "description": "Optional. Human-readable axis title for x_alias, only if the alias itself would be a poor label — keep measures numeric in SQL and use this for display formatting instead of formatting the value itself.",
+                    },
+                    "y_label": {
+                        "type": "string",
+                        "description": "Optional. Human-readable axis title for y_alias, same rule as x_label.",
+                    },
                     "series_alias": {
                         "type": "string",
                         "description": (
@@ -160,6 +168,14 @@ TOOL_SCHEMAS = [
                     "y_alias": {
                         "type": "string",
                         "description": "Exact alias of the measure column in the SQL. Omit for scalar/table/passthrough types.",
+                    },
+                    "x_label": {
+                        "type": "string",
+                        "description": "Optional. Human-readable axis title for x_alias, only if the alias itself would be a poor label — keep measures numeric in SQL and use this for display formatting instead of formatting the value itself.",
+                    },
+                    "y_label": {
+                        "type": "string",
+                        "description": "Optional. Human-readable axis title for y_alias, same rule as x_label.",
                     },
                     "series_alias": {
                         "type": "string",

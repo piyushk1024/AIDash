@@ -90,66 +90,60 @@ PASSTHROUGH_TYPES = {ChartType.GAUGE, ChartType.FUNNEL}
 _UNSUPPORTED_TYPES = {ChartType.PIVOT}
 CHART_TYPE_VALUES = [t.value for t in ChartType if t not in _UNSUPPORTED_TYPES]
 
-CHART_TYPE_GUIDANCE = """- scalar: query returns exactly one row, one column. No extra config needed.
+CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a display string in
+  SQL ("2m 15s", "$1,200") — it breaks ORDER BY (sorts lexically) and
+  turns the axis categorical (renders in row order, not numeric order).
+  For units, use x_label/y_label instead — e.g. x_label:
+  "Resolution Time (hours)" while x_alias stays "resolution_hours" and
+  the SQL returns the raw number. (Pie has no x/y axes — x_label/y_label
+  don't apply there, the dimension's own values are the labels.)
+- scalar: query returns exactly one row, one column. No extra config needed.
 - bar, row, line, pie: first column is a dimension, second is a measure.
   (row = horizontal bar, better for long category labels.)
   pie represents part-of-whole share and works best with few categories;
-  when the goal is comparing magnitudes precisely across categories, bar
-  is usually the safer default.
+  prefer bar over pie for precise magnitude comparison.
 - scatter: both columns are continuous measures — use for correlation
   between two measures, not a time trend.
 - table: result has more than two columns, or doesn't reduce cleanly to a
   single dimension + measure pair. No extra config needed.
-- bar/row/line/scatter/histogram can optionally take a series_alias — a
-  second dimension to group by within each category. For bar/row/line
-  this groups/stacks; for scatter it colors points by group into
-  separate traces; for histogram it overlays semi-transparent
-  distributions per group instead of one combined histogram.
-- gauge needs viz_params matching Plotly's gauge indicator shape. The
-  axis.range MUST reflect the real data scale, not [0, 1] and not an
-  arbitrary round number — domain and axis.range are different things:
-  domain positions the chart on the page and is always {"x": [0, 1],
-  "y": [0, 1]}, axis.range is the data's min/max and must come from your
-  own SQL (e.g. MIN/MAX of the measure, or known profile bounds). Do NOT
-  reuse the domain's [0, 1] for axis.range.
-  Example, for an average price metric around 9.5 (lakhs):
+- bar/row/line/scatter/histogram can take a series_alias — a second
+  dimension to group by within each category (groups/stacks for
+  bar/row/line, separate colored traces for scatter, overlaid
+  semi-transparent distributions for histogram).
+  MANDATORY: if your SQL GROUPs BY two dimension columns, series_alias
+  must be set to the second one — the chart cannot show data it isn't
+  told about. If a chart only needs one dimension, group by only one
+  and leave series_alias out.
+- gauge needs viz_params matching Plotly's gauge shape. domain is always
+  {"x": [0, 1], "y": [0, 1]} (page position, unrelated to data).
+  gauge.axis.range must be the real data's min/max from your own SQL —
+  never reuse domain's [0, 1] or an arbitrary round number. Example, for
+  an average price metric around 9.5 (lakhs):
     value = 9.5
-    gauge = {"axis": {"range": [0, 15]}}   # derived from real MAX, not [0,1]
-    domain = {"x": [0, 1], "y": [0, 1]}    # always this, unrelated to data
+    gauge = {"axis": {"range": [0, 15]}}   # derived from real MAX
+    domain = {"x": [0, 1], "y": [0, 1]}
     mode = "gauge+number"
-- funnel needs viz_params matching Plotly's funnel trace shape:
-  y = ordered stage labels (list, top-to-bottom order matters),
-  x = matching counts/values for each stage (same length and order as y).
-  Only use funnel when the categories represent a genuine sequential
-  process where each stage is a subset of the one before it (e.g.
-  signup -> activation -> purchase, or Owner_Type as 1st -> 2nd -> 3rd
-  owner, where each stage necessarily has fewer records than the last).
-  Do NOT use funnel for mutually exclusive categorical breakdowns that
-  merely happen to sort by count (e.g. dismissal type, product category,
-  region) — those are not a drop-off sequence and belong in bar instead,
-  even if the counts happen to decrease. If you're unsure whether a
-  breakdown is a real process, default to bar.
-- sankey: use three column aliases — source_alias (category), target_alias
-  (category), value_alias (count/weight for that source-target pair).
-  Do NOT build node/link structures yourself; Dasher derives the node
-  list and index mapping from your query results. Just GROUP BY the two
-  categorical columns and aggregate a count/sum as the third, same as
-  you would for any two-dimension breakdown, e.g.:
+- funnel needs viz_params matching Plotly's funnel shape: y = ordered
+  stage labels (top-to-bottom order matters), x = matching counts per
+  stage. Only use for a genuine sequential process where each stage is a
+  subset of the last (signup -> activation -> purchase). Do NOT use for
+  categorical breakdowns that merely sort by count (dismissal type,
+  region) — those belong in bar even if counts happen to decrease. If
+  unsure whether a breakdown is a real process, default to bar.
+- sankey: use source_alias (category), target_alias (category),
+  value_alias (count/weight). Dasher derives node/link structure from
+  your query results — don't build it yourself. GROUP BY the two
+  categorical columns and aggregate a count/sum, e.g.:
     SELECT col_a AS source_alias, col_b AS target_alias, COUNT(*) AS value_alias
     FROM t GROUP BY col_a, col_b
-- histogram: one raw numeric column, one row per record — do not GROUP BY,
-  return the column directly with a descriptive SQL alias (e.g.
-  SELECT "price" AS price), then set x_alias in your JSON output to
-  that same alias. Use to show the distribution/shape of a single
-  measure (e.g. order value spread). Plotly bins client-side, so it
-  doesn't need pre-aggregation. Add a reasonable LIMIT (e.g. 5000) if
-  the table is large.
-- box: one raw numeric column, one row per record, optionally paired
-  with a raw categorical column for one box per category. Give both
-  columns descriptive SQL aliases (e.g. SELECT "price" AS price,
-  "fuel_type" AS fuel_type), then set y_alias to the numeric column's
-  alias and x_alias to the categorical column's alias in your JSON
-  output. Do not GROUP BY or pre-compute percentiles — Plotly derives
-  quartiles and outliers itself from the raw values. Add a LIMIT if the
-  table is large, same as histogram.
+- histogram: one raw numeric column, one row per record — do not GROUP BY.
+  SELECT "price" AS price, set x_alias to that alias. Plotly bins
+  client-side. If the table is large, ORDER BY RANDOM() LIMIT 5000
+  rather than a bare LIMIT (a bare LIMIT isn't a random sample and skews
+  the distribution).
+- box: one raw numeric column, one row per record, optionally paired with
+  a raw categorical column for one box per category. y_alias = numeric
+  column, x_alias = categorical column. Do not GROUP BY or pre-compute
+  percentiles — Plotly derives quartiles/outliers from raw values. Same
+  ORDER BY RANDOM() LIMIT 5000 guidance as histogram if the table is large.
 """

@@ -11,6 +11,25 @@ from app.schemas.chartTypes import (
     DISTRIBUTION_TYPES,
 )
 
+PIE_MAX_DISTINCT = 10
+HISTOGRAM_MIN_DISTINCT = 15
+CATEGORY_MAX_DISTINCT = 30
+SERIES_MAX_DISTINCT = 10
+SANKEY_NODE_MAX_DISTINCT = 15
+
+
+def _distinct_count_for_alias(profile: dict, alias: str | None) -> int | None:
+    # Cardinality/legibility guardrail lookup. Guidance instructs histogram/
+    # box/pie/sankey source columns to use a SQL alias matching the source
+    # column name, so a direct name match covers the normal case. Fails
+    # open (returns None) on any mismatch rather than blocking a chart over
+    # an alias the guardrail can't confidently resolve.
+    if not alias:
+        return None
+    for col in profile.get("columns", []):
+        if col.get("column_name") == alias:
+            return col.get("distinct_count")
+    return None
 
 def _build_chartable_context(semantics: dict, profile: dict, field_map: dict) -> tuple[set, dict, list]:
     """
@@ -48,9 +67,8 @@ def _build_field_reference(filtered_field_map: dict, semantics: dict) -> str:
         for col, meta in filtered_field_map.items()
     )
 
-
 PLANNER_PROMPT = """
-You are a BI analyst planning a Metabase dashboard using PostgreSQL native SQL queries.
+You are a BI analyst planning a dashboard using PostgreSQL native SQL queries.
 
 Table: "{table_name}"
 
@@ -59,13 +77,6 @@ Available columns (name | base_type | semantic_role):
 
 Dataset profile (stats, value_counts, correlations, grouped_stats):
 {profile_summary}
-
-Note on grouped_stats: each categorical grouping includes a "_spread_cv" entry
-per numeric column — the coefficient of variation (std / mean) across that
-column's group means. A low _spread_cv (below ~0.10) means the groups barely
-differ on that measure; a chart built on that pairing will look visually flat
-regardless of chart type. Use this to judge which (dimension, measure) pairs
-are actually worth charting.
 
 ---
 
@@ -79,19 +90,17 @@ doesn't support that many, more if it's unusually rich. Consider:
 - Correlations between measures
 - Derived metrics: ratios, rates, percentages computed in SQL
 - Statistical spread: percentiles, variance
-- Comparative analysis: how does one segment differ from another
-- Multi-factor questions (e.g. "does X vary by Y after accounting for Z") —
-  these are usually best answered by one chart combining the relevant
-  dimensions (see series_alias below), not several charts that each
-  address only one factor
+- Multi-factor comparisons (e.g. how one segment differs from another, or
+  "does X vary by Y after accounting for Z") — usually best answered by one
+  chart combining the relevant dimensions (see series_alias below), not
+  several single-factor charts
 
 Chart planning pass:
-For each question, plan one chart. Write PostgreSQL SQL that answers it directly.
-Alias all output columns clearly — Metabase uses aliases as axis labels.
-
-Before finalizing each chart, check _spread_cv for that chart's grouping
-column and measure. If it's low (below ~0.10), the comparison is essentially
-flat and not worth a chart in that form. Instead:
+For each question, plan one chart. Write PostgreSQL SQL that answers it
+directly. Before finalizing, check grouped_stats' "_spread_cv" entry (std /
+mean across group means) for that chart's grouping column and measure. Below
+~0.10 means the groups barely differ — the comparison will look flat
+regardless of chart type. Instead:
 - pick a different angle on the same columns (a different breakdown, a
   highlight of actual outliers within the group, a ratio/derived metric), or
 - reframe it if the flatness itself is the finding (e.g. "failure rate is
@@ -100,7 +109,7 @@ flat and not worth a chart in that form. Instead:
 
 HARD CONSTRAINTS — non-negotiable:
 - Only use columns from the available columns list above
-- Double-quote all column and table names
+- Double-quote all column and table names; alias all output columns clearly
 - PostgreSQL syntax only
 - SELECT only — never emit DROP, DELETE, UPDATE, INSERT, ALTER, TRUNCATE
 - No semicolons
@@ -129,6 +138,8 @@ Return ONLY a JSON object with exactly these fields:
       "sql": "SELECT ...",
       "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
       "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
+      "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
+      "y_label": "optional — display axis title for y_alias, same rule as x_label",
       "series_alias": "optional — second dimension to group/stack by, only for bar/row/line/scatter/histogram",
       "source_alias": "optional — required for sankey only, exact alias of the source category column",
       "target_alias": "optional — required for sankey only, exact alias of the target category column",
@@ -141,6 +152,7 @@ Return ONLY a JSON object with exactly these fields:
 
 Raw JSON only, no markdown.
 """
+
 async def generate_dashboard_plan(
     dataset_id: str,
     semantics: dict,
@@ -197,6 +209,37 @@ async def generate_dashboard_plan(
             continue
         if chart_type in DISTRIBUTION_TYPES and not chart.get("y_alias"):
             continue
+
+        # Cardinality/legibility guardrail — a chart can pass every alias
+        # check above and still be unreadable if the underlying column has
+        # too many (pie/bar/row/box/sankey) or too few (histogram) distinct
+        # values for that chart type to represent clearly. Runs before the
+        # SQL guard below since it's cheap and needs no parsing.
+        x_distinct = _distinct_count_for_alias(profile, chart.get("x_alias"))
+
+        if chart_type == ChartType.PIE and x_distinct is not None and x_distinct > PIE_MAX_DISTINCT:
+            # Pie and bar share the same SQL shape (one dimension + one
+            # measure, already grouped) — downgrade in place instead of
+            # dropping, no re-query needed.
+            chart["chart_type"] = ChartType.BAR.value
+            chart_type = ChartType.BAR
+
+        if chart_type in HISTOGRAM_TYPES and x_distinct is not None and x_distinct < HISTOGRAM_MIN_DISTINCT:
+            continue
+
+        if chart_type in (ChartType.BAR, ChartType.ROW, ChartType.BOX) and x_distinct is not None and x_distinct > CATEGORY_MAX_DISTINCT:
+            continue
+
+        series_distinct = _distinct_count_for_alias(profile, chart.get("series_alias"))
+        if series_distinct is not None and series_distinct > SERIES_MAX_DISTINCT:
+            continue
+
+        if chart_type == ChartType.SANKEY:
+            source_distinct = _distinct_count_for_alias(profile, chart.get("source_alias"))
+            target_distinct = _distinct_count_for_alias(profile, chart.get("target_alias"))
+            if (source_distinct is not None and source_distinct > SANKEY_NODE_MAX_DISTINCT) or \
+               (target_distinct is not None and target_distinct > SANKEY_NODE_MAX_DISTINCT):
+                continue
 
         try:
             validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
