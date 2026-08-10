@@ -45,14 +45,23 @@ CSV and an optional one-line description of the data.
 
 ## Engineering highlights
 
-**Thirteen chart types across two tiers**
-Tier A (scalar, bar, row, line, pie, scatter, histogram, box, table) uses structured
-`x/y/series` aliases; Dasher builds the Plotly spec itself. Tier B (gauge, funnel,
-waterfall, map) is fully LLM-driven: the model computes its own thresholds, bands,
-or stage breakdowns via SQL and supplies the visualization config directly, with
-self-healing as the correctness net rather than a hardcoded template per type.
-Pivot is excluded by design: it doesn't map cleanly onto Dasher's native-SQL,
-single-query-per-chart architecture.
+**Twelve chart types across two tiers**
+Tier A (scalar, bar, row, line, pie, scatter, histogram, box, table, sankey) uses
+structured aliases — `x/y/series` for most types, `source/target/value` for sankey;
+Dasher builds the Plotly spec and node/link structure itself, no LLM-authored
+indices. Tier B (gauge, funnel) is fully LLM-driven: the model computes its own
+thresholds, bands, or stage breakdowns via SQL and supplies the visualization
+config directly, with self-healing as the correctness net and per-type required-key
+validation as a second gate against malformed output. Pivot and map are excluded
+by design: pivot doesn't map cleanly onto Dasher's native-SQL, single-query-per-chart
+architecture, and map has no supporting geocoding capability in the pipeline.
+
+**Chart legibility guardrails**
+A validation pass catches chart specs that are technically valid but visually
+unusable before they ever reach the client: pie charts downgrade to bar above
+~10 distinct categories rather than rendering as unreadable slivers, low-signal
+groupings are flagged, and multi-dimension charts are checked for coverage. Same
+validation loop the build pipeline already runs, not a separate pass.
 
 **Native rendering, zero BI-tool dependency**
 Charts render directly from query results via Plotly, no embedded third-party BI
@@ -75,9 +84,12 @@ plain-language explanation of why the resulting dashboard fits the stated goal,
 narration-free and specific to what was actually built. A visible, no-extra-clicks
 differentiator between Standard and Agentic mode.
 
-**O(columns) not O(rows) LLM cost**
+**O(columns) not O(rows) LLM cost, measured not estimated**
 The LLM receives a statistical profile, not raw rows. Token usage scales with
-schema width, not dataset size. 
+schema width, not dataset size. Validated directly: a committed eval script runs
+both approaches against the same real-world datasets and compares input token
+counts. The profile-based approach used up to 7.3x fewer input tokens than a
+naive raw-row dump on the datasets tested, with the gap widening as row count grows.
 
 **AST-based SQL validation**
 Every LLM-generated query is parsed to an AST via sqlglot before execution, not
@@ -156,11 +168,12 @@ every dataset-scoped route.
 - Statistical profiling cached to Postgres for both build modes
 - LLM semantic inference with confidence scores, force flag, staleness cascade
 - Two-pass dashboard planning with post-planning validation and deduplication
-- Thirteen-type, two-tier chart system, natively rendered via Plotly with zero third-party BI dependency
+- Twelve-type, two-tier chart system, natively rendered via Plotly with zero third-party BI dependency
+- Chart legibility guardrails: cardinality-aware pie downgrade, low-signal grouping checks
 - Non-destructive, diff-based dashboard rebuilds
 - Agentic mode: native function-calling, goal pre-populated from business context, closing rationale synthesis
 - Real-time SSE streaming for agent builds, with disconnect resumption
-- Two-stage self-healing with LLM diagnosis, covering both SQL and viz config errors
+- Two-stage self-healing with LLM diagnosis, covering both SQL and viz config errors, plus per-type required-key validation on Tier B output
 - Natural language chart authoring (add, edit, delete) directly on the chart grid
 - Two-turn NL insight engine: stats-mode (no row-level data) or live SQL execution
 - Static, frozen public sharing: owner-toggled, no live re-query on the public route
@@ -171,7 +184,8 @@ every dataset-scoped route.
 - AST-based SQL validation via sqlglot, structural not pattern-based
 - Downloadable PDF export of agent-built dashboards
 - One-shot launch UI: sidebar dataset picker, per-card workspace grid
-- Validated across 5 structurally distinct datasets including 260K and 220K row CSVs
+- Reproducible eval harness: runs the real production pipeline against committed fixture datasets, LLM-judges chart quality, and measures the profile-vs-naive token cost gap directly
+- Validated against real-world datasets up to 260K+ rows, spanning retail, automotive, sports, and time-series/sensor data
 
 ---
 
@@ -246,7 +260,10 @@ npm run dev --prefix frontend
 - [x] Provider-unavailability (503) surfacing across both build paths
 - [x] Downloadable PDF export of agent-built dashboards
 - [x] One-shot launch UI: sidebar dataset picker, per-card workspace grid
-- [ ] LLM-as-judge chart quality evaluation
-- [ ] LLM evals harness: classification confidence, chart build success rate, plan relevance
+- [x] Sankey chart type, replacing waterfall, with server-side node/link construction
+- [x] LLM-as-judge chart quality evaluation, run against committed fixture datasets
+- [x] Chart legibility guardrails: cardinality-aware type selection
+- [ ] LLM evals regression harness: classification confidence, chart build success rate, plan relevance, run as part of CI
+- [ ] Heatmap/correlation chart, statistical trend and regression overlays
 - [ ] Cloud deployment
 - [ ] MCP server: Dasher pipeline exposed as MCP tools for Claude Desktop and other agents

@@ -28,6 +28,12 @@ Usage:
 
 Requires the same .env as the main app (DATABASE_URL or DATABASE_URL_LOCAL, LLM_*).
 """
+from app.services.database import _init_connection, delete_dataset
+from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
+from app.services.profiler import profile_csv
+from app.services.llmClient import build_semantics_prompt
+import app.services.pipelineOrchestrator as pipeline_module
+from app.services.pipelineOrchestrator import stream_pipeline
 
 import argparse
 import asyncio
@@ -54,12 +60,7 @@ async def _noop_quota(*args, **kwargs):
 llm_module.check_quota = _noop_quota
 llm_module.increment_usage = _noop_quota
 
-from app.services.database import _init_connection, delete_dataset, get_dataset_metadata
-from app.services.csvLoader import load_csv_to_postgres, sanitise_table_name
-from app.services.profiler import profile_csv
-from app.services.llmClient import build_semantics_prompt
-import app.services.pipelineOrchestrator as pipeline_module
-from app.services.pipelineOrchestrator import stream_pipeline
+
 
 pipeline_module.get_current_user_quota = _noop_quota
 
