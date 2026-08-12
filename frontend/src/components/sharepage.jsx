@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router'
+import { useParams } from 'react-router'
 import Plot from 'react-plotly.js'
 import Plotly from 'plotly.js/dist/plotly'
 import { api } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
 import Modal from './Modal'
+import Footer from './Footer'
 
 function timeAgo(iso) {
   if (!iso) return null
@@ -131,8 +132,7 @@ function PublicChartCard({ chart }) {
 }
 
 export default function SharePage() {
-  const { datasetId } = useParams()
-  const navigate = useNavigate()
+  const { datasetId } = useParams()  
   const [dark, setDark] = useTheme()
   const [data, setData] = useState(null)
   const [error, setError] = useState(null)
@@ -142,13 +142,21 @@ export default function SharePage() {
       .then(res => setData(res))
       .catch(() => setError('This dashboard is not available.'))
   }, [datasetId])
+  
+  useEffect(() => {
+    const meta = document.createElement('meta')
+    meta.name = 'robots'
+    meta.content = 'noindex, nofollow'
+    document.head.appendChild(meta)
+    return () => document.head.removeChild(meta)
+  }, [])
 
   return (
     <div className={dark ? 'dark' : ''}>
       <div className="min-h-screen bg-bg text-fg transition-colors duration-300 flex flex-col">
         <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
+            <img src={dark ? '/dasher2-dark.svg' : '/dasher2-light.svg'} alt="Dasher" className="w-8 h-8 shrink-0" />
             <span className="font-display font-medium text-[18px] tracking-wide uppercase text-fg">
               Dasher
             </span>
@@ -210,20 +218,7 @@ export default function SharePage() {
           )}
         </div>
 
-        <div className="border-t border-muted bg-surface px-10 py-5 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-3 h-3 bg-accent rounded-[3px]" />
-            <span className="font-mono text-xs text-muted">
-              Made with <span className="font-display font-semibold text-fg">Dasher</span>
-            </span>
-          </div>
-          <button
-            onClick={() => navigate('/login')}
-            className="px-4 py-2.5 rounded-icon font-display font-semibold text-xs tracking-wide uppercase bg-accent text-accent-fg"
-          >
-            Make your own dashboard
-          </button>
-        </div>
+      <Footer user={undefined} datasetId={datasetId} />
       </div>
     </div>
   )

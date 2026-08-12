@@ -22,3 +22,4 @@ backend/logs/
 locust/*.log
 locust/results_*
 locust/stats_*
+/frontend/public/*.py

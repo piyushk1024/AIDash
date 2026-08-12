@@ -19,7 +19,7 @@ function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   return (
     <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
       <div className="flex items-center gap-3">        
-        <img src="/dasher2.svg" alt="Dasher" className="w-8 h-8 shrink-0" />
+        <img src={dark ? '/dasher2-dark.svg' : '/dasher2-light.svg'} alt="Dasher" className="w-8 h-8 shrink-0" />
         <span className="font-display font-medium text-[18px] tracking-wide uppercase text-fg">
           Dasher
         </span>

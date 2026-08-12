@@ -60,12 +60,12 @@ export default function AuthPage() {
         {/* Left — marketing panel */}
         <div className="hidden lg:flex flex-1 flex-col justify-center items-center px-16 relative min-w-0">
           <div className="absolute top-10 left-16 flex items-center gap-3">
-            <img src="/dasher2.svg" alt="Dasher" className="w-8 h-8 shrink-0" />
+            <img src={dark ? '/dasher2-dark.svg' : '/dasher2-light.svg'} alt="Dasher" className="w-8 h-8 shrink-0" />
             <span className="font-display font-medium text-[18px] text-fg">DASHER</span>
           </div>
 
           <div className="w-full max-w-[560px] flex flex-col gap-7">
-            <img src="/dasher2.svg" alt="" className="w-40 h-40" />
+            <img src={dark ? '/dasher2-dark.svg' : '/dasher2-light.svg'} alt="" className="w-40 h-40" />
             <div className="flex items-center gap-2.5 w-fit bg-surface border border-muted rounded-full px-4 py-2.5 font-mono text-xs text-muted">
               <span className="text-accent font-bold">$</span>
               <span>dasher --input revenue.csv --infer --build</span>

@@ -221,11 +221,13 @@ export default function Workspace({ dasher }) {
                   : 'bg-accent text-accent-fg'
               }`}
             >
-              {publishing ? '…' : published ? 'Published' : 'Private'}
+              {publishing ? '…' : published ? 'Published' : stale ? 'Stale' : 'Private'}
             </button>
-            {published && stale && (
+            {stale && (
               <p className="mt-2 font-mono text-[10.5px] text-danger leading-snug">
-                Shared version is out of date — republish to update the public link.
+                {published
+                  ? 'Shared version is out of date — republish to update the public link.'
+                  : 'Public link now points to the other mode — republish to make this one live.'}
               </p>
             )}
             {published && (

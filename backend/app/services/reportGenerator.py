@@ -71,7 +71,8 @@ def generate_agent_report_pdf(dashboard_title: str, rationale: str, charts: list
                     height = CHART_IMAGE_HEIGHT
                     width = height / aspect
                     
-                story.append(Image(io.BytesIO(png_bytes), width=CHART_IMAGE_WIDTH, height=CHART_IMAGE_HEIGHT))
+                # story.append(Image(io.BytesIO(png_bytes), width=CHART_IMAGE_WIDTH, height=CHART_IMAGE_HEIGHT))
+                story.append(Image(io.BytesIO(png_bytes), width=width, height=height))
             except Exception:
                 logger.exception("Failed to decode chart image for '%s'", chart_title)
                 story.append(Paragraph("(Chart image could not be decoded)", body_style))
