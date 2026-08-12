@@ -1,0 +1,9 @@
+services:
+  fastapi:
+    volumes:
+      - ./locust/sitecustomize.py:/app/sitecustomize.py:ro
+    environment:
+      - DASHER_STUB_LLM=1
+      - PYTHONUNBUFFERED=1
+    cpus: "2"
+    memory: 2g

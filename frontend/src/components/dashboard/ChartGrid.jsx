@@ -162,17 +162,19 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
       )}
       <Modal open={expanded} onClose={() => setExpanded(false)} size="large">
         {expanded && (
-          <div className="relative">
-            <div className="absolute top-0 right-0 z-10 flex gap-2">
-              <button onClick={handleModalAutoscale} title="Reset scale" className="bg-neutral-800 text-neutral-300 hover:bg-amber-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
-                Reset Scale
-              </button>
-              <button onClick={handleSaveImage} title="Save as image" className="bg-neutral-800 text-neutral-300 hover:bg-amber-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
-                Download Image
-              </button>
-              <button onClick={() => setExpanded(false)} title="Close" className="bg-neutral-800 text-neutral-300 hover:bg-red-400 hover:text-neutral-900 text-xs font-mono px-2 py-1 rounded transition-colors">
-                X
-              </button>
+          <div className="group">
+            <div className="flex justify-end gap-2 mb-1 h-8 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex gap-2 bg-neutral-950/80 rounded px-2 py-1.5">
+                <button onClick={handleModalAutoscale} title="Reset scale" className="bg-transparent text-neutral-400 hover:text-amber-400 text-sm">
+                  ⟳
+                </button>
+                <button onClick={handleSaveImage} title="Save as image" className="bg-transparent text-neutral-400 hover:text-amber-400 text-sm">
+                  ⬇
+                </button>
+                <button onClick={() => setExpanded(false)} title="Close" className="bg-transparent text-neutral-400 hover:text-red-400 text-sm">
+                  ✕
+                </button>
+              </div>
             </div>
             <Plot
               ref={el => { modalGdRef.current = el }}

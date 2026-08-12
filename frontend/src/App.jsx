@@ -11,15 +11,15 @@ import { useTheme } from './hooks/useTheme'
 import Toast, { ToastProvider } from './components/steps/Toast'
 import Modal from './components/Modal'
 import AdminPage from './components/AdminPage'
-import FeedbackFab from './components/steps/FeedbackFab'
+import Footer from './components/Footer'
 import QuotaBadge from './components/steps/QuotaBadge'
 
 function Header({ showHome, onGoHome, user, onLogout, dark, onToggleDark }) {
   const navigate = useNavigate()
   return (
     <header className="border-b border-muted px-10 py-[26px] flex items-center justify-between sticky top-0 bg-bg z-10">
-      <div className="flex items-center gap-3">
-        <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
+      <div className="flex items-center gap-3">        
+        <img src="/dasher2.svg" alt="Dasher" className="w-8 h-8 shrink-0" />
         <span className="font-display font-medium text-[18px] tracking-wide uppercase text-fg">
           Dasher
         </span>
@@ -197,7 +197,7 @@ function DasherApp() {
   if (!isLaunchRoute && !isWorkspaceRoute) {
     return (
       <div className={dark ? 'dark' : ''}>
-        <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
+        <div className="min-h-screen bg-bg text-fg transition-colors duration-300 flex flex-col">
           <Header
             showHome={showHome}
             onGoHome={handleGoHome}
@@ -206,9 +206,8 @@ function DasherApp() {
             dark={dark}
             onToggleDark={() => setDark(d => !d)}
           />
-          <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
           <QuotaBadge />
-          <div className="max-w-xl mx-auto px-8 py-16">
+          <div className="w-full max-w-xl mx-auto px-8 py-16">
             <h1 className="font-mono text-[10.5px] tracking-wider uppercase text-muted mb-1">
               AI-Enabled Dashboarding
             </h1>
@@ -268,6 +267,7 @@ function DasherApp() {
             </button>
           </div>
         </Modal>
+        <Footer user={auth.user} datasetId={routeDatasetId} />
         </div>
       </div>
     )
@@ -275,7 +275,7 @@ function DasherApp() {
 
   return (
     <div className={dark ? 'dark' : ''}>
-      <div className="min-h-screen bg-bg text-fg transition-colors duration-300">
+      <div className="min-h-screen bg-bg text-fg transition-colors duration-300 flex flex-col">
         <Header
           showHome={showHome}
           onGoHome={handleGoHome}
@@ -284,7 +284,6 @@ function DasherApp() {
           dark={dark}
           onToggleDark={() => setDark(d => !d)}
         />
-        <FeedbackFab user={auth.user} datasetId={routeDatasetId} />
         {isWorkspaceRoute ? (
           hydrating ? (
             <div className="max-w-xl mx-auto px-8 py-16">
@@ -294,11 +293,12 @@ function DasherApp() {
             <Workspace dasher={dasher} />
           )
         ) : (
-          <div className="max-w-5xl mx-auto px-8 py-16">
+          <div className="w-full max-w-5xl mx-auto px-8 py-16">
             <LaunchCard dasher={dasher} onDone={handleLaunchDone} user={auth.user}/>
           </div>
         )}
            <QuotaBadge />
+        <Footer user={auth.user} datasetId={routeDatasetId} />
       </div>
     </div>
   )

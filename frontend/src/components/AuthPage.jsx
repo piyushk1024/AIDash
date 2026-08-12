@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../hooks/useTheme'
+import Footer from './Footer'
 
 export default function AuthPage() {
   const auth = useAuth()
@@ -53,16 +54,18 @@ export default function AuthPage() {
 
   return (
     <div className={dark ? 'dark' : ''}>
-      <div className="min-h-screen bg-bg flex">
+      <div className="min-h-screen bg-bg flex flex-col">
+        <div className="flex flex-1">
 
         {/* Left — marketing panel */}
         <div className="hidden lg:flex flex-1 flex-col justify-center items-center px-16 relative min-w-0">
           <div className="absolute top-10 left-16 flex items-center gap-3">
-            <div className="w-4 h-4 bg-accent rounded-[4px] rotate-45 shrink-0" />
+            <img src="/dasher2.svg" alt="Dasher" className="w-8 h-8 shrink-0" />
             <span className="font-display font-medium text-[18px] text-fg">DASHER</span>
           </div>
 
           <div className="w-full max-w-[560px] flex flex-col gap-7">
+            <img src="/dasher2.svg" alt="" className="w-40 h-40" />
             <div className="flex items-center gap-2.5 w-fit bg-surface border border-muted rounded-full px-4 py-2.5 font-mono text-xs text-muted">
               <span className="text-accent font-bold">$</span>
               <span>dasher --input revenue.csv --infer --build</span>
@@ -73,9 +76,14 @@ export default function AuthPage() {
               Drop a CSV.<br />
               Get a <span className="text-accent">dashboard.</span>
             </h1>
-            <p className="font-mono text-[14.5px] leading-relaxed text-muted max-w-[440px]">
-              Dasher profiles your data, infers what matters, and builds charts you steer with plain language — no schema mapping, no chart builder.
-            </p>
+              <ul className="font-mono text-[14.5px] leading-relaxed text-muted max-w-[440px] list-none space-y-1">
+                <li>CSV in, dashboard out, auto-profiled and inferred</li>
+                <li>Goal based Agentic mode</li>
+                <li>Create charts with simple descriptions</li>
+                <li>Query your data in natural language</li>                
+                <li>Publish or export to PDF</li>
+                <li>Efficient: only limited data reaches the LLM</li>
+              </ul>
 
             <div className="flex gap-9 mt-2">
               <div className="flex flex-col gap-1">
@@ -185,6 +193,8 @@ export default function AuthPage() {
           </div>
         </div>
 
+        </div>
+        <Footer user={null} />
       </div>
     </div>
   )

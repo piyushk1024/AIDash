@@ -57,8 +57,8 @@ async def _noop_quota(*args, **kwargs):
     return None
 
 
-llm_module.check_quota = _noop_quota
-llm_module.increment_usage = _noop_quota
+llm_module.reserve_quota_slot = _noop_quota
+llm_module.refund_quota_slot = _noop_quota
 
 
 

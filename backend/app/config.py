@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     MAX_COLUMNS: int = 50
     ENVIRONMENT: str = "development"   # "development" | "production" — gates /docs, /redoc, and default CORS origin
     ALLOWED_ORIGINS: str = "http://localhost:5173"   # comma-separated list; set real prod origin via env at Day 4 hosting
-    DAILY_CALL_LIMIT: int = 10
+    DAILY_CALL_LIMIT: int = 50
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""   # blank = dev file exporter; set in prod (Grafana Cloud OTLP endpoint)
+    OTEL_EXPORTER_OTLP_HEADERS: str = ""    # e.g. "Authorization=Basic <token>" — set in prod
 
 settings = Settings()

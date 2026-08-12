@@ -118,8 +118,8 @@ export default function Workspace({ dasher }) {
     mode: isAgentMode ? 'agent' : 'pipeline',
   }
 
-  return (
-    <div className="max-w-6xl mx-auto px-8 py-10 flex gap-10">
+  return (    
+    <div className="w-full max-w-6xl mx-auto px-8 py-10 flex gap-10">
       <div className="flex flex-col gap-3 shrink-0">
         <button
           onClick={() => setCollapsed(c => !c)}

@@ -81,37 +81,84 @@ async def get_quota_status(user_id: str) -> dict:
             "unlimited": False,
         }
 
-async def check_quota() -> None:
+async def reserve_quota_slot() -> None:
+    """Atomically check-and-increment usage. Raises QuotaExceededError if
+    the user is already at their limit. SELECT ... FOR UPDATE on the
+    user's row serializes concurrent requests from the same user, closing
+    the check-then-increment race that existed when check and increment
+    were separate round trips spanning the LLM call.
+
+    Must be paired with refund_quota_slot() on any failure path after
+    this succeeds, so failed LLM calls don't count against quota (same
+    behavior as before: only successful calls consume quota).
+    """
     user_id = _current_user_id.get()
+    async with _pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT daily_call_limit, is_privileged FROM users WHERE user_id = $1 FOR UPDATE",
+                user_id,
+            )
+
+            if row and row["is_privileged"]:
+                limit = None
+            else:
+                limit = row["daily_call_limit"] if row else None
+                if limit == -1:
+                    limit = None
+                elif limit is None:
+                    limit = settings.DAILY_CALL_LIMIT
+
+            if limit is not None:
+                usage_row = await conn.fetchrow(
+                    f"""
+                    SELECT calls_used
+                    FROM daily_llm_usage
+                    WHERE user_id = $1 AND usage_date = {_TODAY_PT}
+                    """,
+                    user_id,
+                )
+                calls_used = usage_row["calls_used"] if usage_row else 0
+                if calls_used >= limit:
+                    raise QuotaExceededError(user_id, limit)
+
+            await conn.execute(
+                f"""
+                INSERT INTO daily_llm_usage (user_id, usage_date, calls_used)
+                VALUES ($1, {_TODAY_PT}, 1)
+                ON CONFLICT (user_id) DO UPDATE
+                SET calls_used = CASE
+                        WHEN daily_llm_usage.usage_date = {_TODAY_PT}
+                            THEN daily_llm_usage.calls_used + 1
+                        ELSE 1
+                    END,
+                    usage_date = {_TODAY_PT}
+                """,
+                user_id,
+            )
+
     status = await get_quota_status(user_id)
+    _last_quota_status.set(status)
 
-    if status["unlimited"]:
-        return
-    if status["calls_used"] >= status["limit"]:
-        raise QuotaExceededError(user_id, status["limit"])
 
-async def increment_usage() -> None:
+async def refund_quota_slot() -> None:
+    """Decrement usage by 1. Call on any failure path after a successful
+    reserve_quota_slot(), so a failed LLM call doesn't count against the
+    user's daily quota.
+    """
     user_id = _current_user_id.get()
-
     async with _pool.acquire() as conn:
         await conn.execute(
             f"""
-            INSERT INTO daily_llm_usage (user_id, usage_date, calls_used)
-            VALUES ($1, {_TODAY_PT}, 1)
-            ON CONFLICT (user_id) DO UPDATE
-            SET calls_used = CASE
-                    WHEN daily_llm_usage.usage_date = {_TODAY_PT}
-                        THEN daily_llm_usage.calls_used + 1
-                    ELSE 1
-                END,
-                usage_date = {_TODAY_PT}
-            RETURNING calls_used
+            UPDATE daily_llm_usage
+            SET calls_used = GREATEST(calls_used - 1, 0)
+            WHERE user_id = $1 AND usage_date = {_TODAY_PT}
             """,
             user_id,
         )
     status = await get_quota_status(user_id)
     _last_quota_status.set(status)
-
+    
 def get_last_quota_status() -> dict | None:
     return _last_quota_status.get()
 

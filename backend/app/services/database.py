@@ -353,7 +353,7 @@ async def create_user(pool: asyncpg.Pool, username: str, hashed_password: str, r
 
 async def get_user_by_username(pool: asyncpg.Pool, username: str) -> dict | None:
     row = await pool.fetchrow(
-        "SELECT user_id, username, hashed_password, role, is_privileged FROM users WHERE LOWER(username)  = $1",
+        "SELECT user_id, username, hashed_password, role, is_privileged FROM users WHERE LOWER(username)  = LOWER($1)",
         username,
     )
     return dict(row) if row else None

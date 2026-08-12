@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.services.database import create_user, get_user_by_username
 from app.services.auth import hash_password, verify_password, create_access_token
 from app.dependencies import get_db
@@ -8,8 +8,8 @@ from starlette.concurrency import run_in_threadpool
 router = APIRouter()
 
 class RegisterRequest(BaseModel):
-    username: str
-    password: str    
+    username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.@-]+$")
+    password: str = Field(min_length=8, max_length=72)   
 
 class LoginRequest(BaseModel):
     username: str

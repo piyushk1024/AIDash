@@ -45,10 +45,10 @@ export default function FeedbackFab({ user, datasetId }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-7 right-7 z-40 flex items-center gap-2.5 bg-surface border border-muted rounded-full px-4.5 py-2.5 shadow-lg hover:border-accent transition-colors"
+        className="flex items-center gap-2 hover:text-fg transition-colors"
       >
-        <div className="w-2 h-2 rounded-full bg-accent shrink-0" />
-        <span className="font-display font-semibold text-xs tracking-wide uppercase text-fg">Feedback</span>
+        <div className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
+        <span className="font-display font-medium text-xs tracking-wide uppercase">Feedback</span>
       </button>
 
       <Modal open={open} onClose={close}>

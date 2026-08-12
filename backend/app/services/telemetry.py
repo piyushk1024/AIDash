@@ -3,6 +3,9 @@ from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource, SERVICE_NAME
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+
+from app.config import settings
 
 # backend/app/services/ -> backend/app/ -> backend/ -> backend/logs/
 LOG_DIR = Path(__file__).parent.parent.parent / "logs"
@@ -38,9 +41,38 @@ class _TrimmingFileWriter:
             self.path.write_text("".join(lines[-self.max_lines:]))
 
 
+def _parse_otlp_headers(raw: str) -> dict:
+    """Parse 'Key1=Val1,Key2=Val2' into a dict. Empty string -> {}."""
+    headers = {}
+    for pair in raw.split(","):
+        pair = pair.strip()
+        if not pair:
+            continue
+        key, _, value = pair.partition("=")
+        headers[key.strip()] = value.strip()
+    return headers
+
+
+def _build_exporter():
+    """Prod: OTLP HTTP exporter to the configured collector (e.g. Grafana
+    Cloud Tempo). Dev (or prod with no endpoint set yet): file exporter,
+    unchanged from original dev-only behaviour.
+    """
+    if settings.ENVIRONMENT == "production" and settings.OTEL_EXPORTER_OTLP_ENDPOINT:
+        return OTLPSpanExporter(
+            endpoint=settings.OTEL_EXPORTER_OTLP_ENDPOINT,
+            headers=_parse_otlp_headers(settings.OTEL_EXPORTER_OTLP_HEADERS),
+        )
+
+    writer = _TrimmingFileWriter(TELEMETRY_LOG_PATH, MAX_SPAN_LINES)
+    return ConsoleSpanExporter(
+        out=writer,
+        formatter=lambda span: span.to_json(indent=None) + "\n",
+    )
+
+
 def setup_telemetry() -> None:
-    """Initialise the global TracerProvider, writing spans to a git-ignored
-    log file instead of stdout.
+    """Initialise the global TracerProvider.
 
     Called once at application startup in main.py lifespan.
     All trace.get_tracer() calls made anywhere in the process resolve to
@@ -51,11 +83,7 @@ def setup_telemetry() -> None:
     resource = Resource(attributes={SERVICE_NAME: "dasher"})
     provider = TracerProvider(resource=resource)
 
-    writer = _TrimmingFileWriter(TELEMETRY_LOG_PATH, MAX_SPAN_LINES)
-    exporter = ConsoleSpanExporter(
-        out=writer,
-        formatter=lambda span: span.to_json(indent=None) + "\n",
-    )
+    exporter = _build_exporter()
     provider.add_span_processor(BatchSpanProcessor(exporter))
     trace.set_tracer_provider(provider)
 
@@ -72,4 +100,3 @@ def shutdown_telemetry() -> None:
 def get_tracer(name: str) -> trace.Tracer:
     """Return a named tracer from the global provider."""
     return trace.get_tracer(name)
-    
