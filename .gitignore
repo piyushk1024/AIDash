@@ -16,6 +16,7 @@ dataset/
 git_history.txt
 *.csv
 backend/app/uploads/
+backend/db/dmps
 dataset/
 .~lock.*
 backend/logs/
