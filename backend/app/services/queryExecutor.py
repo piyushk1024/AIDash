@@ -162,6 +162,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             # measure and ROW plots the measure on the x-axis.
             layout["xaxis"] = _axis_title(chart, "y_label", y_alias)
             layout["yaxis"] = _axis_title(chart, "x_label", x_alias)
+            layout["xaxis"]["rangemode"] = "tozero"
         elif chart_type != ChartType.PIE:
             layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
             layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
