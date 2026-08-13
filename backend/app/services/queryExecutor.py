@@ -23,26 +23,6 @@ ROW_CHART_CAP = 15
 
 ROW_CHART_CAP = 15
 
-def _is_numeric(value) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _correct_dimension_measure_order(rows: list[dict], x_alias: str, y_alias: str, title: str) -> tuple[str, str]:
-    """DIMENSION_MEASURE_TYPES convention is x_alias=dimension, y_alias=measure.
-    The LLM sometimes emits these reversed. Detect via actual row value types
-    (numeric vs not) on the first row and swap the alias assignment if the
-    LLM got it backwards, rather than trusting stated order blindly.
-    Ambiguous when both columns are numeric — falls back to trusting the
-    stated order, since there's no reliable signal to prefer one over the
-    other in that case.
-    """
-    x_val = _row_value(rows[0], x_alias, title)
-    y_val = _row_value(rows[0], y_alias, title)
-    if _is_numeric(x_val) and not _is_numeric(y_val):
-        return y_alias, x_alias
-    return x_alias, y_alias
-
-
 def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
     """Row (horizontal bar) and table charts show individual records/categories,
     not raw data dumps — cap to top N so cards/modal/exports never need to
@@ -162,8 +142,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
 
     if chart_type in DIMENSION_MEASURE_TYPES:
         x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
-        _require_aliases(chart_type, x_alias, y_alias, title)
-        x_alias, y_alias = _correct_dimension_measure_order(rows, x_alias, y_alias, title)
+        _require_aliases(chart_type, x_alias, y_alias, title)        
         series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
 
         if series_alias:
