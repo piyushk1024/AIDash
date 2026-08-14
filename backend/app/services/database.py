@@ -36,19 +36,52 @@ async def create_pool() -> asyncpg.Pool:
         init=_init_connection,
     )
 
+# ── Delete Datasets ─────────────────────────────────────────────────
+async def delete_dataset(pool: asyncpg.Pool, dataset_id: str, table_name: str):
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
+            await conn.execute(
+                "DELETE FROM dashboard_plans WHERE dataset_id = $1", dataset_id
+            )
+            await conn.execute(
+                "DELETE FROM dataset_semantics WHERE dataset_id = $1", dataset_id
+            )
+            await conn.execute(
+                "DELETE FROM dataset_metadata WHERE dataset_id = $1", dataset_id
+            )
+            await conn.execute(
+                "DELETE FROM dataset_insights WHERE dataset_id = $1", dataset_id
+            )
+
 # ── list Datasets ─────────────────────────────────────────────────
 async def list_datasets_for_user(pool: asyncpg.Pool, user_id: str) -> list:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
-            SELECT dataset_id, name, original_filename
+            SELECT dataset_id, table_name, name, original_filename, dashboard_complete
             FROM dataset_metadata
             WHERE user_id = $1
             ORDER BY created_at DESC
             """,
             user_id,
         )
-    return [dict(row) for row in rows]
+
+    complete, incomplete = [], []
+    for row in rows:
+        (complete if row["dashboard_complete"] else incomplete).append(row)
+
+    for row in incomplete:
+        await delete_dataset(pool, row["dataset_id"], row["table_name"])
+
+    return [dict(row) for row in complete]
+
+async def mark_dashboard_complete(pool: asyncpg.Pool, dataset_id: str) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE dataset_metadata SET dashboard_complete = true WHERE dataset_id = $1",
+            dataset_id,
+        )
 # ── Semantics ─────────────────────────────────────────────────
 
 async def get_cached_semantics(pool: asyncpg.Pool, dataset_id: str):
@@ -268,26 +301,6 @@ async def get_dataset_state(pool: asyncpg.Pool, dataset_id: str):
         "stale_by_mode": stale_by_mode,
 
     }
-
-
-async def delete_dataset(pool: asyncpg.Pool, dataset_id: str, table_name: str):
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute(f'DROP TABLE IF EXISTS "{table_name}"')
-            await conn.execute(
-                "DELETE FROM dashboard_plans WHERE dataset_id = $1", dataset_id
-            )
-            await conn.execute(
-                "DELETE FROM dataset_semantics WHERE dataset_id = $1", dataset_id
-            )
-            await conn.execute(
-                "DELETE FROM dataset_metadata WHERE dataset_id = $1", dataset_id
-            )
-            await conn.execute(
-                "DELETE FROM dataset_insights WHERE dataset_id = $1", dataset_id
-            )
-
-
 # ── Insights ──────────────────────────────────────────────────
 
 async def persist_insight(

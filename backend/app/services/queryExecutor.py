@@ -1,5 +1,7 @@
 import logging
 from app.services.sqlGuard import validate_sql
+from decimal import Decimal
+import math
 from app.schemas.chartTypes import (
     ChartType,
     DIMENSION_MEASURE_TYPES,
@@ -85,7 +87,7 @@ def _row_value(row: dict, alias: str, title: str):
             f"Column '{alias}' not found in query results ({title}). "
             f"Available columns: {list(row.keys())}"
         )
-    return row[alias]
+    return _sanitize_numeric(row[alias])
 
 def _axis_title(chart: dict, label_key: str, alias_fallback: str | None) -> dict:
     # Prefers the LLM-authored x_label/y_label (human-readable, can carry
@@ -94,9 +96,15 @@ def _axis_title(chart: dict, label_key: str, alias_fallback: str | None) -> dict
     # pattern as every other optional chart field (series_alias, etc.).
     label = chart.get(label_key)
     return {"title": {"text": label or alias_fallback}}
-def _round_if_float(value, ndigits: int = 2):
-    """Round floats for display; leave ints, strings, dates, None untouched."""
-    if isinstance(value, float):
+
+def _sanitize_numeric(value, ndigits: int = 2):
+    """Round floats/decimals for display; NaN/Infinity become None (avoids
+    breaking JSON serialization downstream). Leaves ints, strings, dates,
+    None untouched."""
+    if isinstance(value, (float, Decimal)):
+        value = float(value)
+        if math.isnan(value) or math.isinf(value):
+            return None
         return round(value, ndigits)
     return value
 
@@ -109,7 +117,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             raise ValueError(f"Query returned no rows ({title})")
 
     if chart_type == ChartType.SCALAR:
-        value = _round_if_float(next(iter(rows[0].values())))
+        value = _sanitize_numeric(next(iter(rows[0].values())))
         return {"data": [{"type": "indicator", "mode": "number", "value": value}], "layout": layout}
 
     if chart_type == ChartType.TABLE:
@@ -117,7 +125,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         trace = {
             "type": "table",
             "header": {"values": columns},
-            "cells": {"values": [[_round_if_float(row[col]) for row in rows] for col in columns]},
+            "cells": {"values": [[_sanitize_numeric(row[col]) for row in rows] for col in columns]},
         }
         return {"data": [trace], "layout": layout}
 
@@ -295,7 +303,7 @@ def _substitute_row_values(node, row: dict):
     if isinstance(node, list):
         return [_substitute_row_values(v, row) for v in node]
     if isinstance(node, str) and node in row:
-        return row[node]
+        return _sanitize_numeric(row[node])
     return node
 
 

@@ -89,21 +89,30 @@ async def load_csv_to_postgres(
     except UnicodeDecodeError:
         raise ValueError("File is not valid UTF-8 text — not a readable CSV")
 
-    try:
-        dialect = csv.Sniffer().sniff(text[:4096], delimiters=",;\t|")
-    except csv.Error:
-        raise ValueError("Could not detect a valid delimiter — file may be malformed or not a CSV")
+    CANDIDATE_DELIMITERS = ",;\t|"
 
     try:
-        raw_rows = list(csv.reader(io.StringIO(text), dialect=dialect))
+        dialect = csv.Sniffer().sniff(text[:4096], delimiters=CANDIDATE_DELIMITERS)
+    except csv.Error:
+        # Sniffer needs consistent delimiter frequency across sample lines —
+        # ragged/malformed data rows can break that even when the header
+        # itself is fine. Fall back to picking whichever candidate delimiter
+        # appears most often in the header line alone.
+        first_line = text.splitlines()[0] if text.splitlines() else ""
+        counts = {d: first_line.count(d) for d in CANDIDATE_DELIMITERS}
+        best_delim = max(counts, key=counts.get)
+        if counts[best_delim] == 0:
+            raise ValueError("Could not detect a valid delimiter — file may be malformed or not a CSV")
+        dialect = csv.excel
+        dialect.delimiter = best_delim
+
+    try:
+        reader = csv.reader(io.StringIO(text), dialect=dialect)
+        header = next(reader)
+    except StopIteration:
+        raise ValueError("CSV is empty")
     except csv.Error as e:
         raise ValueError(f"Malformed CSV: {e}")
-
-    if not raw_rows:
-        raise ValueError("CSV is empty")
-
-    header = raw_rows[0]
-    data_rows = raw_rows[1:]
 
     if len(header) > settings.MAX_COLUMNS:
         raise ValueError(
@@ -114,6 +123,27 @@ async def load_csv_to_postgres(
     # Dedupe before dict construction — DictReader would silently collapse
     # duplicate header names here otherwise.
     columns = dedupe_columns(header)
+
+    data_rows = []
+    prev_line_num = reader.line_num
+    try:
+        for r in reader:
+            span = reader.line_num - prev_line_num
+            prev_line_num = reader.line_num
+            if span > 1:
+                raise ValueError(
+                    f"Row near line {reader.line_num} spans multiple lines — "
+                    f"likely an unclosed quote. File may be malformed."
+                )
+            if len(r) != len(columns):
+                raise ValueError(
+                    f"Row near line {reader.line_num} has {len(r)} field(s), "
+                    f"expected {len(columns)} (matching header). File may "
+                    f"have unescaped delimiters or unclosed quotes."
+                )
+            data_rows.append(r)
+    except csv.Error as e:
+        raise ValueError(f"Malformed CSV: {e}")
 
     rows = [dict(zip(columns, r)) for r in data_rows]
 

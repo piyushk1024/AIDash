@@ -127,7 +127,7 @@ function toTraceEntries(events) {
     .map(({ type: _, ...rest }) => rest)
 }
 
-export default function ProcessingView({ mode, events, streaming, streamError, datasetLabel, onCancel, onEditHint, onUploadDifferent }) {
+export default function ProcessingView({ mode, events, streaming, streamError, datasetLabel, onEditHint, onUploadDifferent }) {
   const errorEvent = events.find(e => e.type === 'phase_error')
   const isTerminal = Boolean(errorEvent) && !streaming
   const steps = mode === 'pipeline' ? buildStandardSteps(events) : buildAgentSteps(events)
@@ -202,15 +202,9 @@ export default function ProcessingView({ mode, events, streaming, streamError, d
           {showAgentTrace && <AgentTrace trace={traceEntries} />}
 
           <div className="flex items-center justify-between pt-1 border-t border-muted">
-            <span className="font-mono text-[11.5px] text-muted pt-4">{footerNote}</span>
-            <button
-              onClick={onCancel}
-              disabled={mode === 'agent' && events.length > 0}
-              title={mode === 'agent' && events.length > 0 ? "Agentic flow initiated" : undefined}
-              className="mt-4 px-4 py-2.5 rounded-control font-display font-semibold text-xs text-danger border border-danger"
-            >
-              CANCEL
-            </button>
+            <div className="flex items-center justify-between pt-1 border-t border-muted">
+              <span className="font-mono text-[11.5px] text-muted pt-4">{footerNote}</span>
+            </div>
           </div>
         </div>
       )}

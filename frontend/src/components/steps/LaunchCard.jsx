@@ -1,7 +1,8 @@
-import { useState, useRef } from 'react'
+import {useEffect, useState, useRef } from 'react'
 import ProcessingView from './ProcessingView'
 import { useEventStream } from '../../hooks/useEventStream'
 import { api } from '../../lib/api'
+
 
 const fieldLabel = "font-mono font-semibold text-[10.5px] uppercase tracking-wider text-muted"
 const fieldInput = "w-full bg-surface border border-muted rounded-control px-3 py-2.5 font-mono text-[13px] text-fg placeholder-muted/60 focus:outline-none focus:border-accent transition-colors disabled:opacity-50"
@@ -13,7 +14,7 @@ const MAX_COLUMNS = 50
 // When present: dropzone/name/comment are disabled (no re-upload), mode +
 // hint stay editable, and submitting re-infers/rebuilds on the existing
 // dataset instead of launching a new one.
-export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
+export default function LaunchCard({ dasher, onDone, rebuildContext, user, onProcessingChange }) { {
   const { applyLaunchEvents, applyAgentEvents, inferSemantics, generatePlan, createDashboard, datasetId, agentResult } = dasher
   const isRebuild = Boolean(rebuildContext)
 
@@ -37,6 +38,20 @@ export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
 
   const { events, streaming, streamError, startStream, reset } = useEventStream()
   const maxFileMb = user?.is_privileged ? MAX_FILE_MB * 4 : MAX_FILE_MB
+
+  useEffect(() => {
+    onProcessingChange?.(showProcessing)
+  }, [showProcessing]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!showProcessing) return
+    const handler = (e) => {
+      e.preventDefault()
+      e.returnValue = ''
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [showProcessing])
 
   function handleDrop(e) {
     e.preventDefault()
@@ -134,10 +149,10 @@ export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
     return handleAgentRebuild()
   }
 
-  function handleCancel() {
-    setShowProcessing(false)
-    reset()
-  }
+  // function handleCancel() {
+  //   setShowProcessing(false)
+  //   reset()
+  // }
 
   function handleEditHint() {
     setShowProcessing(false)
@@ -158,7 +173,7 @@ export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
         streaming={streaming}
         streamError={streamError}
         datasetLabel={name.trim() || file?.name}
-        onCancel={handleCancel}
+        // onCancel={handleCancel}
         onEditHint={handleEditHint}
         onUploadDifferent={handleUploadDifferent}
       />
@@ -293,4 +308,4 @@ export default function LaunchCard({ dasher, onDone, rebuildContext, user }) {
       </div>
     </div>
   )
-}
+}}

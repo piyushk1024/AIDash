@@ -9,7 +9,8 @@ from app.services.database import (
     get_dataset_metadata,
     get_dataset_owner,
     persist_profile_json,
-    set_last_active_mode
+    set_last_active_mode,
+    mark_dashboard_complete
 )
 
 from app.services.dashboardPlanner import generate_dashboard_plan
@@ -161,9 +162,11 @@ async def build_dashboard(
         # though cardBuilder's return value never carried them.
         built_charts.append({**chart, **result})
 
-    updated_plan = {**plan, "mode": "pipeline", "charts": built_charts, "errors": errors}
+    updated_plan = {**plan, "mode": "pipeline", "charts": built_charts, "errors": errors}    
     await update_dashboard_plan(db, dataset_id, updated_plan)
     await set_last_active_mode(db, dataset_id, "pipeline")
+    if built_charts:
+        await mark_dashboard_complete(db, dataset_id)
 
     return {
         "cards_created": len(built_charts),

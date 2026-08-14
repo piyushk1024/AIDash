@@ -139,6 +139,8 @@ function DasherApp() {
   const isLaunchRoute = location.pathname === '/launch'
   const isWorkspaceRoute = Boolean(routeDatasetId)
   const [pendingDeleteId, setPendingDeleteId] = useState(null)
+  const [buildInProgress, setBuildInProgress] = useState(false)
+  const [pendingHomeNav, setPendingHomeNav] = useState(false)
 
 
   useEffect(() => {
@@ -178,12 +180,21 @@ function DasherApp() {
     setPendingDeleteId(null)
   }
 
-  function handleGoHome() {
+  function confirmGoHome() {
+    setPendingHomeNav(false)
     api.listDatasets()
       .then(res => setDatasets(res.datasets ?? []))
       .catch(() => {})
     dasher.reset()
     navigate('/')
+  }
+
+  function handleGoHome() {
+    if (buildInProgress) {
+      setPendingHomeNav(true)
+      return
+    }
+    confirmGoHome()
   }
 
   async function handleLaunchDone(datasetId) {
@@ -250,6 +261,24 @@ function DasherApp() {
             )}
           </div>
           <Modal open={Boolean(pendingDeleteId)} onClose={() => setPendingDeleteId(null)}>
+            <Modal open={pendingHomeNav} onClose={() => setPendingHomeNav(false)}>
+          <p className="font-display font-semibold text-fg mb-1">Leave and lose progress?</p>
+          <p className="font-mono text-xs text-muted mb-5">A build is still running. Leaving now won't stop it, but you'll lose this view of its progress.</p>
+          <div className="flex gap-2.5 justify-end">
+            <button
+              onClick={() => setPendingHomeNav(false)}
+              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
+            >
+              Stay
+            </button>
+            <button
+              onClick={confirmGoHome}
+              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
+            >
+              Leave
+            </button>
+          </div>
+        </Modal>
           <p className="font-display font-semibold text-fg mb-1">Delete this dataset?</p>
           <p className="font-mono text-xs text-muted mb-5">This can't be undone. The dashboard and all its charts will be permanently removed.</p>
           <div className="flex gap-2.5 justify-end">
@@ -294,7 +323,7 @@ function DasherApp() {
           )
         ) : (
           <div className="w-full max-w-5xl mx-auto px-8 py-16">
-            <LaunchCard dasher={dasher} onDone={handleLaunchDone} user={auth.user}/>
+            <LaunchCard dasher={dasher} onDone={handleLaunchDone} user={auth.user} onProcessingChange={setBuildInProgress}/>
           </div>
         )}
            <QuotaBadge />
