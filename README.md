@@ -1,4 +1,5 @@
 # Dasher
+![Dasher dashboard](docs/header.png)
 
 Upload a CSV. Get a fully configured, interactive dashboard in minutes.
 No column mapping, no chart config, no BI expertise required, no third-party
@@ -10,23 +11,22 @@ BI tool to stand up and maintain.
 
 ---
 
-Dasher is an AI-enabled dashboarding tool and portfolio project built to demonstrate
-agentic AI patterns, production-grade API design, and end-to-end system thinking.
-It runs two build modes: a sequential pipeline (profile → semantics → plan → build)
-and an agentic mode where an LLM orchestrates the same pipeline via native
-function-calling with no LangChain dependency, streaming its progress to the client
-in real time over SSE. Both modes render a fully interactive, shareable dashboard
-directly from a raw CSV upload, natively, with no external BI service in the
-rendering path. Either mode can be rebuilt independently without destroying the other.
+Dasher is an AI-enabled dashboarding engine built to demonstrate agentic AI
+patterns, production-grade API design, and end-to-end system thinking, all in
+one project. It runs two build modes: a sequential pipeline (profile →
+semantics → plan → build) and an agentic mode where an LLM orchestrates the
+same pipeline via native function-calling, no LangChain, streaming its
+progress to the client in real time over SSE. Both modes render a fully
+interactive, shareable dashboard directly from a raw CSV upload, natively,
+with zero external BI service in the rendering path.
 
 ## The problem
 
-Getting from raw data to a useful dashboard requires manually mapping columns,
-choosing chart types, writing queries, and configuring a BI tool. It demands
-both domain knowledge and BI expertise. Most people skip it.
-Dasher automates the full chain: statistical profiling, LLM semantic inference,
-dashboard planning, and native chart rendering. The only input required is a
-CSV and an optional one-line description of the data.
+Getting from raw data to a useful dashboard normally means manually mapping
+columns, choosing chart types, writing queries, and standing up a BI tool.
+Dasher collapses the entire chain into one step: statistical profiling, LLM
+semantic inference, dashboard planning, and native chart rendering, all
+automatic. The only input required is a CSV.
 
 ---
 
@@ -35,156 +35,163 @@ CSV and an optional one-line description of the data.
 1. Upload a CSV, profiled automatically (stats, value counts, correlations)
 2. LLM classifies every column: dimensions, measures, dates, flags, identifiers
 3. Two-pass dashboard planning: analytical questions first, then charts
-4. PostgreSQL-native charts executed and rendered natively via Plotly, no external BI dependency
-5. Agentic build mode streams live progress (inspect/build/heal/finish) over SSE, closing with an agent-authored rationale explaining why the dashboard fits the stated goal
+4. PostgreSQL-native charts executed and rendered natively via Plotly, zero external BI dependency
+5. Agentic build mode streams live progress (inspect/build/heal/finish) over SSE, closing with an agent-authored rationale
 6. Natural language authoring: add, edit, or delete charts post-build, right on the chart grid
 7. Natural language insight engine against live data
 8. One-click public sharing, frozen at publish time
 
 ---
+![Dasher dashboard](docs/AgenticTrace.png)
+
+![Dasher dashboard](docs/sampledash.png)
+## Two build modes
+
+**Pipeline mode** runs a fixed sequence: profile the data, infer semantics,
+plan the dashboard, build it. Predictable, fast, good default.
+
+**Agent mode** hands an LLM a goal and a set of tools (`inspect_data`,
+`build_and_add_chart`, `edit_existing_chart`, `delete_existing_chart`,
+`finish`), then lets it decide what to inspect and build next, calling
+tools directly via native function-calling, no LangChain. It's not just
+"call the LLM once with a bigger prompt", the agent makes its own
+sequencing decisions, can course-correct mid-build, and closes by
+writing a plain-language explanation of why the dashboard fits the goal
+it was given, generated fresh per run, not a template.
+
+Both modes render the same interactive dashboard. Rebuilding one never
+touches the other's live output, and switching between them is explicit,
+never accidental.
+
+---
+
+![Dasher architecture](docs/highlevelArch.svg)
+
+---
 
 ## Engineering highlights
 
-**Twelve chart types across two tiers**
-Tier A (scalar, bar, row, line, pie, scatter, histogram, box, table, sankey) uses
-structured aliases — `x/y/series` for most types, `source/target/value` for sankey;
-Dasher builds the Plotly spec and node/link structure itself, no LLM-authored
-indices. Tier B (gauge, funnel) is fully LLM-driven: the model computes its own
-thresholds, bands, or stage breakdowns via SQL and supplies the visualization
-config directly, with self-healing as the correctness net and per-type required-key
-validation as a second gate against malformed output. Pivot and map are excluded
-by design: pivot doesn't map cleanly onto Dasher's native-SQL, single-query-per-chart
-architecture, and map has no supporting geocoding capability in the pipeline.
+**Agent progress streams live**
+Every step (inspecting data, building a chart, healing a failure) streams
+to the UI over SSE as it happens, not just a spinner until the whole
+build finishes.
 
-**Chart legibility guardrails**
-A validation pass catches chart specs that are technically valid but visually
-unusable before they ever reach the client: pie charts downgrade to bar above
-~10 distinct categories rather than rendering as unreadable slivers, low-signal
-groupings are flagged, and multi-dimension charts are checked for coverage. Same
-validation loop the build pipeline already runs, not a separate pass.
+**Self-healing on failure**
+If a chart's SQL or config breaks, Dasher automatically diagnoses and
+retries with an LLM-powered fix, at both build time and render time.
 
-**Native rendering, zero BI-tool dependency**
-Charts render directly from query results via Plotly, no embedded third-party BI
-service, no iframe, no separate rendering process to provision, secure, or keep in
-sync. A dashboard is just SQL results and a JSON spec, all the way down.
+**Twelve chart types, two tiers**
+Bar, line, pie, scatter, histogram, box, table, sankey, and more. Standard
+types are built server-side from structured data, no room for the LLM to
+generate broken chart code. Gauge and funnel are LLM-driven, backed by
+the same self-healing net.
 
-**Non-destructive rebuild**
-Dashboard rebuilds diff against the previous build rather than tearing down and
-recreating every chart. Unchanged charts are skipped entirely, changed charts are
-updated in place, only removed charts are dropped.
+**Charts that stay readable at any scale**
+A pie chart with 40 slices is useless. Dasher catches this before it
+ships: oversized pie charts downgrade to bar, low-signal groupings get
+flagged, so what renders is always something a human can read.
 
-**Mode-aware dashboard state**
-Pipeline and agent builds are tracked independently. Rebuilding one mode never
-silently corrupts or orphans the other's live dashboard. Switching modes is an
-explicit, confirmed action, not a race condition.
+**No BI tool in the loop**
+Charts render straight from query results to Plotly. Nothing to host,
+secure, or keep in sync with a third-party service.
 
-**Agent-exclusive dashboard rationale**
-After an agentic build finishes, a dedicated synthesis step generates a short,
-plain-language explanation of why the resulting dashboard fits the stated goal,
-narration-free and specific to what was actually built. A visible, no-extra-clicks
-differentiator between Standard and Agentic mode.
+**Rebuilds don't nuke your dashboard**
+Changing one chart doesn't rebuild all twelve. Dasher diffs against the
+last build and only touches what changed.
 
-**O(columns) not O(rows) LLM cost, measured not estimated**
-The LLM receives a statistical profile, not raw rows. Token usage scales with
-schema width, not dataset size. Validated directly: a committed eval script runs
-both approaches against the same real-world datasets and compares input token
-counts. The profile-based approach used up to 7.3x fewer input tokens than a
-naive raw-row dump on the datasets tested, with the gap widening as row count grows.
+**SQL injection isn't possible, by construction**
+LLM-generated SQL is parsed into a syntax tree before it touches the
+database, not scanned for banned keywords. Only `SELECT` statements pass.
+`DROP`, `DELETE`, `INSERT` and friends are structurally rejected, no way
+to sneak one past a blocklist with clever phrasing.
 
-**AST-based SQL validation**
-Every LLM-generated query is parsed to an AST via sqlglot before execution, not
-pattern-matched against a keyword blocklist. The parser enforces a single
-statement, requires the root node to be a `Select` (CTEs included), and walks the
-full tree rejecting any disallowed node type: `Insert`, `Update`, `Delete`, `Drop`,
-`Alter`, `Create`, `TruncateTable`, `Grant`, `Command`. Structural validation, not
-string matching.
+**Real SQL, not a query-builder's compromise**
+Window functions, CTEs, percentiles, top-N, all generated natively.
+Nothing capped by an abstraction layer standing between the LLM and
+Postgres.
 
-**Native SQL generation**
-Raw PostgreSQL generated directly: window functions, CTEs, percentiles, HAVING,
-derived metrics, top-N. No query abstraction layer constraining expressiveness.
+**Public links can't leak your data**
+Sharing a dashboard freezes a snapshot at that moment. The public link
+never re-queries your live database, so there's no path from a shared
+link back to your actual data.
 
-**Agentic mode with native function-calling**
-An LLM agent orchestrates the full pipeline via native Gemini function-calling,
-no LangChain or LangGraph. Tools: `inspect_data`, `build_and_add_chart`,
-`edit_existing_chart`, `delete_existing_chart`, `finish`. Agent goal is
-pre-populated from the business context set at upload time, editable before launch.
+**Zero-footprint uploads**
+Your CSV is loaded into Postgres and discarded immediately. No file ever
+sits on disk. Storage cost doesn't grow with upload volume.
 
-**Real-time agent streaming**
-The agent loop is an async generator (`stream_agent`) yielding typed events
-(`step_started`, `inspect_result`, `chart_built`, `healing`, `rationale`, `finish`)
-over Server-Sent Events. Each trace-worthy event is persisted before the next step
-runs, so a client disconnect mid-run is recoverable: `GET /datasets/{id}/state`
-returns the partial trace and whatever charts had already landed. The existing
-synchronous endpoint is preserved as a thin wrapper over the same generator.
+**Spend can't run away**
+Per-user quotas, loop caps, and a kill switch are enforced server-side.
+No path to an open-ended LLM bill from an anonymous signup.
 
-**Two-stage self-healing**
-Chart failures caught at two levels: build failures and rendering failures. Both
-trigger an automated LLM-powered heal cycle, covering SQL errors and Tier B
-visualization config errors alike. Healed charts flagged in UI with a before/after
-comparison.
+**Tenant isolation, actually tested**
+Every route that touches a dataset is covered by a dedicated cross-user
+access test suite, not just assumed safe. 403 on any mismatch, 20/20 passing.
 
-**Static, frozen public sharing**
-Publishing snapshots the query results and Plotly spec at that moment, no live
-re-query on the public route. Underlying data exposure is eliminated by
-construction, not by an access-control check someone could get wrong.
+**Full observability, not console.log debugging**
+Every LLM call is traced with cost, tokens, and latency, live in Grafana
+Cloud. Know exactly what a run cost and where the time went.
 
-**Semantics staleness cascade**
-Re-running semantic inference with a changed hint marks the downstream plan stale
-via `stale` + `generation_counter`. The `force` flag bypasses the LLM cache without
-triggering staleness. Hint change and forced refresh are handled as distinct cases.
+**Async, end to end**
+Postgres and HTTP calls are both non-blocking. The server stays
+responsive under concurrent builds instead of queuing behind one slow
+request.
 
-**Zero CSV footprint**
-The uploaded file is read once, loaded straight into Postgres, and discarded, no
-disk write, no database blob. Every downstream stage, both build modes, reads from
-the statistical profile cached in Postgres. Storage cost stays flat regardless of
-upload volume.
+**Ownership enforced at the data layer**
+Every route checks dataset ownership before doing anything: 404 if it
+doesn't exist, 403 if it's not yours. Not delegated to a proxy or gateway.
 
-**Hand-rolled migration runner**
-~20-line runner, `schema_versions` table, numbered SQL files applied in order,
-each in its own transaction, runs in the FastAPI lifespan hook. No Alembic: the
-asyncpg-direct stack has no ORM, adding one for migrations alone wasn't justified.
+---
 
-**OpenTelemetry instrumentation**
-Spans on every LLM call (`generate()` / `generate_with_tools()`) carrying `stage`,
-`model`, `input_tokens`, `output_tokens`, and `latency_ms`. Per-stage cost and
-latency attribution across the full pipeline without touching business logic.
+## Cost: measured, not claimed
 
-**Async throughout**
-asyncpg connection pool + httpx.AsyncClient, both lifespan-managed and injected via
-FastAPI dependency injection. Event loop never blocked on the request path.
+The LLM gets a statistical profile, not raw rows, so cost scales with
+column count, not row count. Verified with a committed eval script run
+against real datasets:
 
-**Auth at the database layer**
-`get_dataset_owner` checked on every mutating route: 404 first, 403 on mismatch.
-All access control lives in Dasher's own JWT stack, nothing delegated to a
-rendering layer. Verified with a dedicated cross-user access test suite covering
-every dataset-scoped route.
+| Dataset | Rows | Dasher tokens | Naive tokens | Reduction |
+|---|---|---|---|---|
+| deliveries.csv | 260,920 | 10,855 | 44,727 | 4.1x |
+| diwali_sales.csv | 11,251 | 8,916 | 64,672 | 7.3x |
+
+Gap widens as row count grows, since naive cost is O(rows), Dasher's is O(columns).
+
+**Chart quality (LLM-judged, 1-5 scale, both datasets)**
+
+| Metric | Score |
+|---|---|
+| Relevance | 4.83 |
+| Correctness | 4.3 |
+| Clarity | 5.0 |
 
 ---
 
 ## What shipped
 
 - JWT auth, per-user ownership, 403 on mismatch across all routes
-- CSV upload: original filename persisted, file discarded after load, zero storage footprint
+- CSV upload: zero storage footprint, file discarded after load
 - Statistical profiling cached to Postgres for both build modes
-- LLM semantic inference with confidence scores, force flag, staleness cascade
+- LLM semantic inference with confidence scores, force flag, staleness checks
 - Two-pass dashboard planning with post-planning validation and deduplication
-- Twelve-type, two-tier chart system, natively rendered via Plotly with zero third-party BI dependency
+- Twelve-type, two-tier chart system, natively rendered via Plotly, zero third-party BI dependency
 - Chart legibility guardrails: cardinality-aware pie downgrade, low-signal grouping checks
 - Non-destructive, diff-based dashboard rebuilds
 - Agentic mode: native function-calling, goal pre-populated from business context, closing rationale synthesis
-- Real-time SSE streaming for agent builds, with disconnect resumption
-- Two-stage self-healing with LLM diagnosis, covering both SQL and viz config errors, plus per-type required-key validation on Tier B output
+- Real-time SSE streaming for agent builds
+- Two-stage self-healing with LLM diagnosis, plus per-type required-key validation on Tier B output
 - Natural language chart authoring (add, edit, delete) directly on the chart grid
-- Two-turn NL insight engine: stats-mode (no row-level data) or live SQL execution
-- Static, frozen public sharing: owner-toggled, no live re-query on the public route
+- Two-turn NL insight engine: stats-mode or live SQL execution
+- Static, frozen public sharing: owner-toggled, no live re-query
 - Hand-rolled migration runner, auto-applied on startup
-- Full session rehydration from prior pipeline state, mode-aware (pipeline vs agent)
-- OpenTelemetry spans across the LLM pipeline: per-stage cost and latency attribution
+- Full session rehydration from prior pipeline state, mode-aware
+- OpenTelemetry spans across the LLM pipeline, live in Grafana Cloud
 - LLM-agnostic via LiteLLM, provider swap is a one-line config change
 - AST-based SQL validation via sqlglot, structural not pattern-based
 - Downloadable PDF export of agent-built dashboards
+- Per-user LLM quotas, loop caps, and a global kill switch, server-enforced
+- 20-test cross-user isolation suite, 100% pass across every dataset-scoped route
 - One-shot launch UI: sidebar dataset picker, per-card workspace grid
-- Reproducible eval harness: runs the real production pipeline against committed fixture datasets, LLM-judges chart quality, and measures the profile-vs-naive token cost gap directly
+- Reproducible eval harness: runs the real production pipeline against committed fixture datasets, LLM-judges chart quality, measures the profile-vs-naive token cost gap directly, 4.1x-7.3x fewer input tokens confirmed on real datasets
+- Deployed and live on Railway (managed Postgres, containerized backend/frontend, nginx reverse proxy, OTLP tracing wired to Grafana Cloud)
 - Validated against real-world datasets up to 260K+ rows, spanning retail, automotive, sports, and time-series/sensor data
 
 ---
@@ -205,7 +212,7 @@ every dataset-scoped route.
 | POST | `/generate-dashboard-plan/{id}` | Required | Two-pass LLM dashboard plan |
 | POST | `/datasets/{id}/dashboard/build` | Required | Diff-based, self-healing dashboard build |
 | POST | `/datasets/{id}/dashboard/agent` | Required | Agentic build, synchronous |
-| POST | `/datasets/{id}/dashboard/agent/stream` | Required | Agentic build, SSE streaming with disconnect resumption |
+| POST | `/datasets/{id}/dashboard/agent/stream` | Required | Agentic build, SSE streaming |
 | POST | `/datasets/{id}/dashboard/charts` | Required | Add chart via natural language |
 | PUT | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Edit chart via natural language |
 | DELETE | `/datasets/{id}/dashboard/charts/{card_id}` | Required | Delete chart |
@@ -224,7 +231,7 @@ git clone <repo>
 cd dasher
 python -m venv env && source env/bin/activate
 pip install -r backend/requirements.txt
-# fill in backend/.env (see table below)
+# fill in backend/.env (see table below, or copy backend/.env.example)
 docker compose up                                  # starts Postgres + FastAPI
 # migrations run automatically on startup
 npm run dev --prefix frontend
@@ -247,23 +254,25 @@ npm run dev --prefix frontend
 
 ## Roadmap
 
-- [x] SSE streaming: real-time agent progress, disconnect resumption
-- [x] OpenTelemetry: per-call latency and cost attribution across pipeline stages
+- [x] SSE streaming: real-time agent progress
+- [x] OpenTelemetry: per-call latency and cost attribution, live in Grafana Cloud
 - [x] Two-tier chart type system with LLM-driven Tier B visualization config
 - [x] Non-destructive, diff-based dashboard rebuilds
 - [x] Native Plotly rendering, removing the Metabase dependency entirely
 - [x] Agent-exclusive dashboard rationale synthesis
 - [x] Scatter, histogram, and box plot chart types
-- [x] Postman collection: full pipeline chain (upload → semantics → build) with environment-based dataset_id threading
+- [x] Postman collection: full pipeline chain with environment-based dataset_id threading
 - [x] CI: ruff, eslint, pytest gating on push
 - [x] AST-based SQL validation via sqlglot
 - [x] Provider-unavailability (503) surfacing across both build paths
 - [x] Downloadable PDF export of agent-built dashboards
 - [x] One-shot launch UI: sidebar dataset picker, per-card workspace grid
-- [x] Sankey chart type, replacing waterfall, with server-side node/link construction
+- [x] Sankey chart type with server-side node/link construction
 - [x] LLM-as-judge chart quality evaluation, run against committed fixture datasets
 - [x] Chart legibility guardrails: cardinality-aware type selection
+- [x] Cost and abuse guardrails: per-user quota, loop caps, global kill switch
+- [x] Cross-user tenant isolation test suite, 20 tests, full coverage
+- [x] Production deployment on Railway with live OTEL tracing
 - [ ] LLM evals regression harness: classification confidence, chart build success rate, plan relevance, run as part of CI
 - [ ] Heatmap/correlation chart, statistical trend and regression overlays
-- [ ] Cloud deployment
 - [ ] MCP server: Dasher pipeline exposed as MCP tools for Claude Desktop and other agents
