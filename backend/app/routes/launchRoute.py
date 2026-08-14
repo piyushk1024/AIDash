@@ -21,6 +21,7 @@ from app.services.database import (
     persist_dashboard_plan,
     update_dashboard_plan,
     set_last_active_mode,
+    mark_dashboard_complete,
     json_default,
 )
 
@@ -103,6 +104,8 @@ async def launch_dataset_stream(
                     elif event["type"] == "finish":
                         await update_dashboard_plan(db, dataset_id, event["plan"], mode="pipeline")
                         await set_last_active_mode(db, dataset_id, "pipeline")
+                        if event.get("charts_built"):
+                            await mark_dashboard_complete(db, dataset_id)
 
                     yield _sse_format(event)
 
@@ -174,6 +177,9 @@ async def launch_dataset_stream(
                         trace.append(trace_entry)
                         agent_plan = {**agent_plan, "charts": charts_built, "trace": trace}
                         await update_dashboard_plan(db, dataset_id, agent_plan, mode="agent")
+                        
+                    if event_type == "finish" and charts_built:
+                        await mark_dashboard_complete(db, dataset_id)
 
                     yield _sse_format(event)
 

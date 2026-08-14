@@ -260,43 +260,26 @@ function DasherApp() {
               </div>
             )}
           </div>
+
           <Modal open={Boolean(pendingDeleteId)} onClose={() => setPendingDeleteId(null)}>
-            <Modal open={pendingHomeNav} onClose={() => setPendingHomeNav(false)}>
-          <p className="font-display font-semibold text-fg mb-1">Leave and lose progress?</p>
-          <p className="font-mono text-xs text-muted mb-5">A build is still running. Leaving now won't stop it, but you'll lose this view of its progress.</p>
-          <div className="flex gap-2.5 justify-end">
-            <button
-              onClick={() => setPendingHomeNav(false)}
-              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
-            >
-              Stay
-            </button>
-            <button
-              onClick={confirmGoHome}
-              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
-            >
-              Leave
-            </button>
-          </div>
-        </Modal>
-          <p className="font-display font-semibold text-fg mb-1">Delete this dataset?</p>
-          <p className="font-mono text-xs text-muted mb-5">This can't be undone. The dashboard and all its charts will be permanently removed.</p>
-          <div className="flex gap-2.5 justify-end">
-            <button
-              onClick={() => setPendingDeleteId(null)}
-              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => handleDeleteDataset(pendingDeleteId)}
-              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
-            >
-              Delete
-            </button>
-          </div>
-        </Modal>
-        <Footer user={auth.user} datasetId={routeDatasetId} />
+            <p className="font-display font-semibold text-fg mb-1">Delete this dataset?</p>
+            <p className="font-mono text-xs text-muted mb-5">This can't be undone. The dashboard and all its charts will be permanently removed.</p>
+            <div className="flex gap-2.5 justify-end">
+              <button
+                onClick={() => setPendingDeleteId(null)}
+                className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteDataset(pendingDeleteId)}
+                className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
+              >
+                Delete
+              </button>
+            </div>
+          </Modal>
+          <Footer user={auth.user} datasetId={routeDatasetId} />
         </div>
       </div>
     )
@@ -327,6 +310,24 @@ function DasherApp() {
           </div>
         )}
            <QuotaBadge />
+           <Modal open={pendingHomeNav} onClose={() => setPendingHomeNav(false)}>
+          <p className="font-display font-semibold text-fg mb-1">Leave and lose progress?</p>
+          <p className="font-mono text-xs text-muted mb-5">A build is still running. Leaving now won't stop it, but you'll lose this view of its progress.</p>
+          <div className="flex gap-2.5 justify-end">
+            <button
+              onClick={() => setPendingHomeNav(false)}
+              className="px-4 py-2 rounded-control font-display text-xs font-medium uppercase tracking-wide text-muted hover:text-fg transition-colors"
+            >
+              Stay
+            </button>
+            <button
+              onClick={confirmGoHome}
+              className="px-4 py-2 rounded-control font-display text-xs font-semibold uppercase tracking-wide bg-danger text-white"
+            >
+              Leave
+            </button>
+          </div>
+        </Modal>
         <Footer user={auth.user} datasetId={routeDatasetId} />
       </div>
     </div>

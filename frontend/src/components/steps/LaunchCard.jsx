@@ -104,7 +104,8 @@ export default function LaunchCard({ dasher, onDone, rebuildContext, user, onPro
         comment: comment.trim() || null,
         original_filename: file.name,
       })
-      
+
+      setShowProcessing(false)      
       onDone(createdEvent?.dataset_id)
     }
   }

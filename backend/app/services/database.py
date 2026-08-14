@@ -67,14 +67,7 @@ async def list_datasets_for_user(pool: asyncpg.Pool, user_id: str) -> list:
             user_id,
         )
 
-    complete, incomplete = [], []
-    for row in rows:
-        (complete if row["dashboard_complete"] else incomplete).append(row)
-
-    for row in incomplete:
-        await delete_dataset(pool, row["dataset_id"], row["table_name"])
-
-    return [dict(row) for row in complete]
+    return [dict(row) for row in rows]
 
 async def mark_dashboard_complete(pool: asyncpg.Pool, dataset_id: str) -> None:
     async with pool.acquire() as conn:
