@@ -90,7 +90,7 @@ async def load_csv_to_postgres(
         raise ValueError("File is not valid UTF-8 text — not a readable CSV")
 
     CANDIDATE_DELIMITERS = ",;\t|"
-
+    delimiter = None
     try:
         dialect = csv.Sniffer().sniff(text[:4096], delimiters=CANDIDATE_DELIMITERS)
     except csv.Error:
@@ -103,11 +103,13 @@ async def load_csv_to_postgres(
         best_delim = max(counts, key=counts.get)
         if counts[best_delim] == 0:
             raise ValueError("Could not detect a valid delimiter — file may be malformed or not a CSV")
-        dialect = csv.excel
-        dialect.delimiter = best_delim
+        delimiter = best_delim
 
     try:
-        reader = csv.reader(io.StringIO(text), dialect=dialect)
+        if delimiter:
+                reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+        else:
+                reader = csv.reader(io.StringIO(text), dialect=dialect)
         header = next(reader)
     except StopIteration:
         raise ValueError("CSV is empty")

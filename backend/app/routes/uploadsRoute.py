@@ -77,7 +77,7 @@ async def upload_csv(
             await delete_dataset(db, existing_dataset_id, metadata["table_name"])
 
     dataset_id = str(uuid4())
-    table_name = sanitise_table_name(file.filename)
+    table_name = f"{sanitise_table_name(file.filename)}_{dataset_id[:8]}"
 
     try:
         load_result = await load_csv_to_postgres(db, content, table_name, is_privileged=current_user.is_privileged)
