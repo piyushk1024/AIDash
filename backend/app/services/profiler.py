@@ -95,8 +95,8 @@ async def profile_csv(pool, table_name: str, dataset_id: str) -> dict:
                 }
             grouped_stats[cat_col] = cleaned
 
-        # Coefficient of variation across group means — flags flat/low-signal
-        # groupings before they reach chart planning.
+            # Coefficient of variation across group means — flags flat/low-signal
+            # groupings before they reach chart planning.
             spread = {}
             for num_col in numeric_cols:
                 means = group[num_col]

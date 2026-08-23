@@ -64,8 +64,8 @@ llm_module.refund_quota_slot = _noop_quota
 
 pipeline_module.get_current_user_quota = _noop_quota
 
-PRICE_PER_1M_INPUT = 0.10   # USD — verify against provider pricing before citing
-PRICE_PER_1M_OUTPUT = 0.40  # USD
+PRICE_PER_1M_INPUT = 0.25   # USD — verify against provider pricing before citing
+PRICE_PER_1M_OUTPUT = 1.5  # USD
 
 JUDGE_PROMPT_TEMPLATE = """You are evaluating the quality of a single chart that was auto-generated
 for a business dashboard. Judge it strictly on its own merits.
@@ -119,7 +119,7 @@ async def call_llm_direct(prompt: str) -> dict:
             if attempt == MAX_RETRIES - 1:
                 raise
             match = _RETRY_DELAY_PATTERN.search(str(e))
-            delay = float(match.group(1)) if match else DEFAULT_RETRY_SECONDS
+            delay = float(match.group(1)) + 5.0 if match else DEFAULT_RETRY_SECONDS
             print(f"    rate limited, retrying in {delay:.0f}s (attempt {attempt + 1}/{MAX_RETRIES})...", file=sys.stderr)
             await asyncio.sleep(delay)
 

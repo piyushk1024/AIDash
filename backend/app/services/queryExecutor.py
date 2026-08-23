@@ -22,9 +22,6 @@ _PASSTHROUGH_PLOTLY_TYPE = {
 
 ROW_CHART_CAP = 15
 
-
-ROW_CHART_CAP = 15
-
 def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
     """Row (horizontal bar) and table charts show individual records/categories,
     not raw data dumps — cap to top N so cards/modal/exports never need to
@@ -62,7 +59,6 @@ async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
     spec = _build_plotly_spec(rows, chart)
     return {"rows": rows, "spec": spec}
 
-
 async def execute_raw_query(pool, sql: str, table_name: str) -> dict:
     """
     Executes raw SQL and returns rows only, no spec building. Used by
@@ -75,7 +71,6 @@ async def execute_raw_query(pool, sql: str, table_name: str) -> dict:
     async with pool.acquire() as conn:
         records = await conn.fetch(sql)
     return {"rows": [dict(r) for r in records]}
-
 
 def _row_value(row: dict, alias: str, title: str):
     # Central point for reading a chart's declared alias out of an actual
@@ -217,8 +212,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
 def _require_aliases(chart_type: ChartType, x_alias, y_alias, title: str) -> None:
     if not x_alias or not y_alias:
         raise ValueError(f"x_alias/y_alias required for chart type '{chart_type.value}' ({title})")
-
-
+    
 def _single_trace(chart_type: ChartType, x: list, y: list) -> dict:
     if chart_type == ChartType.BAR:
         return {"type": "bar", "x": x, "y": y}
@@ -291,7 +285,6 @@ _PASSTHROUGH_REQUIRED_KEYS = {
     ChartType.FUNNEL: ("x", "y"),    
 }
 
-
 def _substitute_row_values(node, row: dict):
     # LLM authors viz_params before the query runs, so it can't know
     # computed values (e.g. AVG(price)) at write time — it writes the
@@ -305,7 +298,6 @@ def _substitute_row_values(node, row: dict):
     if isinstance(node, str) and node in row:
         return _sanitize_numeric(row[node])
     return node
-
 
 def _passthrough_trace(chart_type: ChartType, chart: dict, rows: list[dict], title: str) -> dict:
     viz_params = chart.get("viz_params")

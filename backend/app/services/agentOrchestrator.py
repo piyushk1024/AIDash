@@ -5,7 +5,7 @@ from app.services.llm import generate, generate_with_tools
 from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
 from app.services.agentDispatch import (
     dispatch_inspect_data,
-dispatch_build_and_add_chart,
+    dispatch_build_and_add_chart,
     dispatch_edit_existing_chart,
     dispatch_delete_existing_chart,
 )
@@ -17,7 +17,6 @@ from app.services.quotaGuard import get_current_user_quota
 logger = logging.getLogger(__name__)
 
 _EXISTING_ONLY_TOOLS = {"edit_existing_chart", "delete_existing_chart"}
-
 
 def _build_field_reference(field_map: dict, semantics: dict) -> str:
     role_map = {}
@@ -110,7 +109,6 @@ Respond with ONLY a JSON object in this exact shape, no markdown fences,
 no preamble, no text outside the JSON:
 {{"dashboard_title": "...", "rationale": "..."}}
 """
-
 
 def _summarize_charts_for_rationale(charts_built: list[dict]) -> str:
     lines = []
