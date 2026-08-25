@@ -8,29 +8,10 @@ from app.services.dashboardPlanner import generate_dashboard_plan
 from app.services.cardBuilder import build_card_with_healing
 from app.services.llm import is_llm_in_cooldown, LLMUnavailableError
 from app.services.quotaGuard import QuotaExceededError
-from app.schemas.chartTypes import CHART_TYPE_VALUES
+from app.services.chartValidation import clean_and_validate_charts
 from app.services.quotaGuard import get_current_user_quota
 
 logger = logging.getLogger(__name__)
-
-
-def _validate_and_clean_charts(charts: list) -> list:
-    # Same dedup/validation as dashboardRoute.validate_and_clean_charts —
-    # duplicated here rather than imported to keep this file's only
-    # dependency on dashboardRoute at zero (route stays a thin caller).
-    seen_titles = set()
-    cleaned = []
-    for chart in charts:
-        if not chart.get("sql") or not chart.get("chart_title") or not chart.get("chart_type"):
-            continue
-        if chart["chart_type"] not in CHART_TYPE_VALUES:
-            continue
-        if chart["chart_title"] in seen_titles:
-            continue
-        seen_titles.add(chart["chart_title"])
-        cleaned.append(chart)
-    return cleaned
-
 
 async def stream_pipeline(    
     dataset_id: str,
@@ -94,7 +75,8 @@ async def stream_pipeline(
         }
         return
 
-    plan["charts"] = _validate_and_clean_charts(plan["charts"])
+    plan["charts"] = clean_and_validate_charts(plan["charts"])
+    
     if not plan["charts"]:
         yield {
             "type": "phase_error",
@@ -124,7 +106,7 @@ async def stream_pipeline(
             continue
 
         result, error = await build_card_with_healing(
-            chart, field_map, pool, table_name, existing_id=chart.get("card_id"),
+            chart, field_map, pool, table_name, existing_id=chart.get("card_id"),profile=profile,
         )
 
         if error:

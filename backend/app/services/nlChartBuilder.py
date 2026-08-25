@@ -2,6 +2,7 @@ import json
 from app.services.llm import generate
 from app.services.sqlGuard import validate_sql
 from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
+from app.services.chartValidation import missing_required_fields, apply_cardinality_guardrail
 
 
 NL_CHART_PROMPT = """
@@ -45,7 +46,7 @@ Return ONLY a JSON object with exactly these fields:
   "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
   "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
   "y_label": "optional — display axis title for y_alias, same rule as x_label",
-  "series_alias": "optional — second dimension to group/stack by, only for bar/row/line/scatter/histogram",
+  "series_alias": "optional — second dimension to group/stack by, only for bar/line/scatter/histogram",
   "source_alias": "optional — required for sankey only, exact alias of the source category column",
   "target_alias": "optional — required for sankey only, exact alias of the target category column",
   "value_alias": "optional — required for sankey only, exact alias of the count/weight column",
@@ -119,7 +120,7 @@ async def build_chart_from_prompt(
 
     chart = json.loads(raw)
     required = ("chart_title", "chart_type", "sql")
-    missing = [f for f in required if not chart.get(f)]
+    missing = missing_required_fields(chart, required)
 
     if missing:
         raise ValueError(f"NL chart builder response missing required field(s): {missing}")
@@ -128,4 +129,7 @@ async def build_chart_from_prompt(
         raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")
 
     validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
+    violation = apply_cardinality_guardrail(chart, profile)
+    if violation:
+        raise ValueError(violation)
     return chart

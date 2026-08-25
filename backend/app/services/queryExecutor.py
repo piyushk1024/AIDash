@@ -2,41 +2,26 @@ import logging
 from app.services.sqlGuard import validate_sql
 from decimal import Decimal
 import math
-from app.schemas.chartTypes import (
-    ChartType,
-    DIMENSION_MEASURE_TYPES,
-    MEASURE_PAIR_TYPES,
-    SERIES_CAPABLE_TYPES,
-    PASSTHROUGH_TYPES,
-    HISTOGRAM_TYPES,
-    DISTRIBUTION_TYPES,
-    SANKEY_TYPES,
-)
+from app.schemas.chartTypes import ChartType, CHART_TYPE_REGISTRY
 
 logger = logging.getLogger(__name__)
 
-_PASSTHROUGH_PLOTLY_TYPE = {
-    ChartType.GAUGE: "indicator",
-    ChartType.FUNNEL: "funnel",    
-}
-
-ROW_CHART_CAP = 15
+TABLE_ROW_CAP = 15
 
 def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
-    """Row (horizontal bar) and table charts show individual records/categories,
-    not raw data dumps — cap to top N so cards/modal/exports never need to
-    scroll or clip. Sorts by y_alias descending when present (row charts,
-    ranking by measure); table charts have no y_alias, so this just takes
-    the first N in query order. Falls back to a plain slice if y_alias is
-    missing or non-numeric (avoids crashing the chart over a sort issue,
-    capped output still beats an uncapped one)."""
+    """Table charts show individual records, not raw data dumps — cap to
+    top N so cards/modal/exports never need to scroll or clip. Table
+    charts have no y_alias, so this just takes the first N in query
+    order. Falls back to a plain slice if y_alias is missing or
+    non-numeric (avoids crashing the chart over a sort issue, capped
+    output still beats an uncapped one)."""
     y_alias = chart.get("y_alias")
     if y_alias:
         try:
             rows = sorted(rows, key=lambda r: r.get(y_alias) or 0, reverse=True)
         except TypeError:
             pass
-    return rows[:ROW_CHART_CAP]
+    return rows[:TABLE_ROW_CAP]
 
 async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
     """
@@ -53,7 +38,7 @@ async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
     async with pool.acquire() as conn:
         records = await conn.fetch(chart["sql"])
     rows = [dict(r) for r in records]
-    if chart.get("chart_type") in (ChartType.ROW.value, ChartType.TABLE.value):
+    if chart.get("chart_type") == ChartType.TABLE.value:
         rows = _cap_tabular_rows(rows, chart)
 
     spec = _build_plotly_spec(rows, chart)
@@ -109,13 +94,18 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
     layout = {"title": {"text": title}}
 
     if not rows:
-            raise ValueError(f"Query returned no rows ({title})")
+        raise ValueError(f"Query returned no rows ({title})")
 
-    if chart_type == ChartType.SCALAR:
+    record = CHART_TYPE_REGISTRY.get(chart_type)
+    if record is None:
+        raise ValueError(f"Unsupported chart type '{chart_type.value}' ({title})")
+    category = record["category"]
+
+    if category == "scalar":
         value = _sanitize_numeric(next(iter(rows[0].values())))
         return {"data": [{"type": "indicator", "mode": "number", "value": value}], "layout": layout}
 
-    if chart_type == ChartType.TABLE:
+    if category == "table":
         columns = list(rows[0].keys())
         trace = {
             "type": "table",
@@ -124,10 +114,10 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         }
         return {"data": [trace], "layout": layout}
 
-    if chart_type in MEASURE_PAIR_TYPES:
+    if category == "measure_pair":
         x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
         _require_aliases(chart_type, x_alias, y_alias, title)
-        series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
+        series_alias = chart.get("series_alias") if record["series_capable"] else None
 
         if series_alias:
             data = _grouped_traces(chart_type, rows, x_alias, y_alias, series_alias, title)
@@ -143,10 +133,10 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": data, "layout": layout}
 
-    if chart_type in DIMENSION_MEASURE_TYPES:
+    if category == "dimension_measure":
         x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
-        _require_aliases(chart_type, x_alias, y_alias, title)        
-        series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
+        _require_aliases(chart_type, x_alias, y_alias, title)
+        series_alias = chart.get("series_alias") if record["series_capable"] else None
 
         if series_alias:
             data = _grouped_traces(chart_type, rows, x_alias, y_alias, series_alias, title)
@@ -156,25 +146,16 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             y = [_row_value(r, y_alias, title) for r in rows]
             data = [_single_trace(chart_type, x, y)]
 
-        # ROW charts flip x/y internally (see _single_trace) — axis titles
-        # follow the same swap so labels stay on the correct axis.
-        if chart_type == ChartType.ROW:
-            # ROW flips x/y in the trace itself (see _single_trace) — the
-            # label follows the same swap, since y_label describes the
-            # measure and ROW plots the measure on the x-axis.
-            layout["xaxis"] = _axis_title(chart, "y_label", y_alias)
-            layout["yaxis"] = _axis_title(chart, "x_label", x_alias)
-            layout["xaxis"]["rangemode"] = "tozero"
-        elif chart_type != ChartType.PIE:
+        if chart_type != ChartType.PIE:
             layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
             layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": data, "layout": layout}
 
-    if chart_type in HISTOGRAM_TYPES:
+    if category == "histogram":
         x_alias = chart.get("x_alias")
         if not x_alias:
             raise ValueError(f"x_alias required for chart type '{chart_type.value}' ({title})")
-        series_alias = chart.get("series_alias") if chart_type in SERIES_CAPABLE_TYPES else None
+        series_alias = chart.get("series_alias") if record["series_capable"] else None
 
         if series_alias:
             data = _grouped_traces(chart_type, rows, x_alias, None, series_alias, title)
@@ -187,7 +168,7 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
         layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
         return {"data": data, "layout": layout}
 
-    if chart_type in DISTRIBUTION_TYPES:
+    if category == "distribution":
         y_alias = chart.get("y_alias")
         if not y_alias:
             raise ValueError(f"y_alias required for chart type '{chart_type.value}' ({title})")
@@ -198,14 +179,14 @@ def _build_plotly_spec(rows: list[dict], chart: dict) -> dict:
             layout["xaxis"] = _axis_title(chart, "x_label", x_alias)
         layout["yaxis"] = _axis_title(chart, "y_label", y_alias)
         return {"data": [trace], "layout": layout}
-    
-    if chart_type in SANKEY_TYPES:
+
+    if category == "sankey":
         trace = _build_sankey_trace(rows, chart, title)
         return {"data": [trace], "layout": layout}
-    
-    if chart_type in PASSTHROUGH_TYPES:
-        trace = trace = _passthrough_trace(chart_type, chart, rows, title)
-        return {"data": [trace], "layout": layout}  
+
+    if category == "passthrough":
+        trace = _passthrough_trace(chart_type, chart, rows, title)
+        return {"data": [trace], "layout": layout}
 
     raise ValueError(f"Unsupported chart type '{chart_type.value}' ({title})")
 
@@ -216,8 +197,6 @@ def _require_aliases(chart_type: ChartType, x_alias, y_alias, title: str) -> Non
 def _single_trace(chart_type: ChartType, x: list, y: list) -> dict:
     if chart_type == ChartType.BAR:
         return {"type": "bar", "x": x, "y": y}
-    if chart_type == ChartType.ROW:
-        return {"type": "bar", "x": y, "y": x, "orientation": "h"}
     if chart_type == ChartType.LINE:
         return {"type": "scatter", "mode": "lines+markers", "x": x, "y": y}
     if chart_type == ChartType.PIE:
@@ -280,11 +259,6 @@ def _build_sankey_trace(rows: list[dict], chart: dict, title: str) -> dict:
         "link": {"source": source_idx, "target": target_idx, "value": values},
     }
 
-_PASSTHROUGH_REQUIRED_KEYS = {
-    ChartType.GAUGE: ("domain", "gauge","value"),
-    ChartType.FUNNEL: ("x", "y"),    
-}
-
 def _substitute_row_values(node, row: dict):
     # LLM authors viz_params before the query runs, so it can't know
     # computed values (e.g. AVG(price)) at write time — it writes the
@@ -306,7 +280,7 @@ def _passthrough_trace(chart_type: ChartType, chart: dict, rows: list[dict], tit
 
     viz_params = _substitute_row_values(viz_params, rows[0])
 
-    required = _PASSTHROUGH_REQUIRED_KEYS[chart_type]
+    required = CHART_TYPE_REGISTRY[chart_type]["viz_params_required_keys"]
     missing = [k for k in required if k not in viz_params]
     if missing:
         raise ValueError(
@@ -315,5 +289,5 @@ def _passthrough_trace(chart_type: ChartType, chart: dict, rows: list[dict], tit
         )
 
     trace = dict(viz_params)
-    trace.setdefault("type", _PASSTHROUGH_PLOTLY_TYPE[chart_type])
+    trace.setdefault("type", CHART_TYPE_REGISTRY[chart_type]["plotly_type"])
     return trace

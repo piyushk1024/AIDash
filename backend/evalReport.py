@@ -145,7 +145,7 @@ def summarize_profile(profile: dict, max_cols: int = 30) -> str:
     return "\n".join(lines) if lines else "  (no profile columns found)"
 
 
-_Y_ALIAS_CHART_TYPES = {"bar", "row", "line", "scatter", "box"}
+_Y_ALIAS_CHART_TYPES = {"bar", "line", "scatter", "box"}
 
 
 def _json_safe(value):

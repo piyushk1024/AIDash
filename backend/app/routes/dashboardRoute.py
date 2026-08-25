@@ -10,7 +10,8 @@ from app.services.database import (
     get_dataset_owner,
     persist_profile_json,
     set_last_active_mode,
-    mark_dashboard_complete
+    mark_dashboard_complete,
+    get_cached_profile
 )
 
 from app.services.dashboardPlanner import generate_dashboard_plan
@@ -18,40 +19,12 @@ from app.services.profiler import profile_csv
 from app.services.cardBuilder import build_card_with_healing
 from app.services.llm import is_llm_in_cooldown
 
-from app.schemas.chartTypes import CHART_TYPE_VALUES
+# from app.schemas.chartTypes import CHART_TYPE_VALUES
+from app.services.chartValidation import clean_and_validate_charts
 from app.services.llm import LLMUnavailableError
 
 
-
-
 router = APIRouter()
-# VALID_CHART_TYPES = {"bar", "line", "scalar", "pie"}
-
-
-
-def validate_and_clean_charts(charts: list) -> list:
-    seen_titles = set()
-    cleaned = []
-
-    for chart in charts:
-        # Must have required fields
-        if not chart.get("sql") or not chart.get("chart_title") or not chart.get("chart_type"):
-            continue
-
-        # chart_type must be valid
-        if chart["chart_type"] not in CHART_TYPE_VALUES:
-            continue
-
-        # Deduplicate on title
-        if chart["chart_title"] in seen_titles:
-            continue
-        seen_titles.add(chart["chart_title"])
-
-        cleaned.append(chart)
-
-    return cleaned
-
-
 
 @router.post("/generate-dashboard-plan/{dataset_id}")
 async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depends(require_editor)):
@@ -87,7 +60,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     except LLMUnavailableError as e:
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
-    plan["charts"] = validate_and_clean_charts(plan["charts"])
+    plan["charts"] = clean_and_validate_charts(plan["charts"])
 
     if not plan["charts"]:
         raise HTTPException(
@@ -125,6 +98,7 @@ async def build_dashboard(
         )
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
+    profile = await get_cached_profile(db, dataset_id)
 
     built_charts, errors = [], []
     provider_unavailable = False
@@ -141,7 +115,7 @@ async def build_dashboard(
             continue
 
         result, error = await build_card_with_healing(
-            chart, field_map, db, table_name, existing_id=chart.get("card_id"),
+            chart, field_map, db, table_name, existing_id=chart.get("card_id"),profile=profile
         )
         # print("DEBUG error value:", error)
         

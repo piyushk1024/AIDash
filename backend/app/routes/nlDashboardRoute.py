@@ -6,10 +6,10 @@ from app.services.database import (
     get_cached_dashboard_plan,
     update_dashboard_plan,
     get_dataset_owner,
-    set_last_active_mode
+    set_last_active_mode,
+    get_cached_profile
 )
 
-from app.services.profiler import profile_csv
 from app.services.nlChartBuilder import build_chart_from_prompt
 from app.services.cardBuilder import build_card_with_healing
 from app.dependencies import get_db, require_editor
@@ -22,12 +22,6 @@ class NLChartRequest(BaseModel):
     prompt: str
     selected_columns: list[str] = []
     mode: str = "pipeline"
-
-
-async def _fetch_profile_if_needed(db, table_name: str, dataset_id: str, selected_columns: list[str]) -> dict | None:
-    if not selected_columns:
-        return None
-    return await profile_csv(db, table_name, dataset_id)
 
 
 async def _get_common_deps(db, dataset_id: str, user_id: str, mode: str) -> tuple:
@@ -64,7 +58,8 @@ async def add_nl_chart(
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = await _fetch_profile_if_needed(db, table_name, dataset_id, body.selected_columns)
+    profile = await get_cached_profile(db, dataset_id)
+
     try:
         chart_spec = await build_chart_from_prompt(
             prompt=body.prompt,
@@ -79,7 +74,7 @@ async def add_nl_chart(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"Couldn't build a valid chart from that request: {e}")
 
-    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name)
+    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name,profile=profile)
     if error:
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)
@@ -91,9 +86,6 @@ async def add_nl_chart(
     await set_last_active_mode(db, dataset_id, body.mode)
 
     return result
-
-    return result
-
 
 @router.put("/datasets/{dataset_id}/dashboard/charts/{card_id}")
 async def edit_nl_chart(
@@ -107,7 +99,7 @@ async def edit_nl_chart(
     field_map = metadata["field_map"]
     table_name = metadata["table_name"]
 
-    profile = await _fetch_profile_if_needed(db, table_name, dataset_id, body.selected_columns)
+    profile = await get_cached_profile(db, dataset_id)
 
     try:
         chart_spec = await build_chart_from_prompt(
@@ -121,7 +113,7 @@ async def edit_nl_chart(
     except LLMUnavailableError as e:
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
-    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name, existing_id=card_id)
+    result, error = await build_card_with_healing(chart_spec, field_map, db, table_name, existing_id=card_id, profile=profile)
     if error:
         raise HTTPException(status_code=500,
                             detail=f"Failed to create chart '{error.get('chart_title', 'unknown')}'",)

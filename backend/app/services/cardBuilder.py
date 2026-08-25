@@ -12,6 +12,7 @@ async def build_card_with_healing(
     pool,
     table_name: str,
     existing_id: str | None = None,
+    profile: dict | None = None,
 ) -> tuple[dict | None, dict | None]:
     """
     Runs chart's SQL via queryExecutor and builds a stored Plotly card result.

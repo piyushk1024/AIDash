@@ -10,85 +10,157 @@ class ChartType(str, Enum):
     (visualization_settings construction).
 
     Adding a value here does not automatically make it usable end-to-end —
-    metabaseClient.create_card() must also know how to build (or accept)
-    visualization_settings for it. See TIER_A / TIER_B below.
+    it also needs an entry in CHART_TYPE_REGISTRY below. See TIER_A / TIER_B.
     """
     SCALAR = "scalar"
     BAR = "bar"
     LINE = "line"
     PIE = "pie"
-    SCATTER = "scatter"
-    ROW = "row"
+    SCATTER = "scatter"    
     TABLE = "table"
     GAUGE = "gauge"
     FUNNEL = "funnel"
     SANKEY = "sankey"
-    PIVOT = "pivot"    
+    PIVOT = "pivot"
     HISTOGRAM = "histogram"
     BOX = "box"
 
 
-# ── Tier A — structured params ───────────────────────────────
-# Dasher builds visualization_settings itself from x_alias / y_alias
-# (and, for series-capable types, an optional series_alias). The LLM
-# never hand-writes Metabase viz JSON for these — it just picks a type
-# and aliases its SQL output columns.
+# ── Registry — single source of truth per type ──────────────
+# One record per usable chart type. Every membership set below is derived
+# from this dict, not hand-maintained, so adding a type means adding one
+# record here instead of updating N sets by hand.
+#
+# Fields:
+#   category            — dispatch bucket used by queryExecutor._build_plotly_spec
+#   required_aliases    — top-level chart fields that must be present (empty
+#                          tuple if none, e.g. passthrough validates viz_params
+#                          keys instead — see viz_params_required_keys)
+#   series_capable       — accepts an optional series_alias for grouping
+#   plotly_type          — trace "type" value. Authoritative for passthrough
+#                          types (used directly); informational for the rest,
+#                          which have per-type trace-building logic 
+#   viz_params_required_keys — passthrough types only: required keys inside
+#                          the LLM-authored viz_params dict, checked at
+#                          render time (hoisted from queryExecutor.py's old
+#                          _PASSTHROUGH_REQUIRED_KEYS, same shape, same values)
+#
+# PIVOT has no entry — Metabase only supports pivot tables for GUI
+# query-builder cards, never native SQL cards, which is what Dasher always
+# sends, so it stays permanently unsupported.
 
-SCALAR_TYPES = {ChartType.SCALAR}
+CHART_TYPE_REGISTRY = {
+    ChartType.SCALAR: {
+        "category": "scalar",
+        "required_aliases": (),
+        "series_capable": False,
+        "plotly_type": "indicator",
+        "viz_params_required_keys": None,
+    },
+    ChartType.BAR: {
+        "category": "dimension_measure",
+        "required_aliases": ("x_alias", "y_alias"),
+        "series_capable": True,
+        "plotly_type": "bar",
+        "viz_params_required_keys": None,
+    },
+    ChartType.LINE: {
+        "category": "dimension_measure",
+        "required_aliases": ("x_alias", "y_alias"),
+        "series_capable": True,
+        "plotly_type": "scatter",
+        "viz_params_required_keys": None,
+    },
+    ChartType.PIE: {
+        "category": "dimension_measure",
+        "required_aliases": ("x_alias", "y_alias"),
+        "series_capable": False,
+        "plotly_type": "pie",
+        "viz_params_required_keys": None,
+    },
+    ChartType.SCATTER: {
+        "category": "measure_pair",
+        "required_aliases": ("x_alias", "y_alias"),
+        "series_capable": True,
+        "plotly_type": "scatter",
+        "viz_params_required_keys": None,
+    },
+    ChartType.TABLE: {
+        "category": "table",
+        "required_aliases": (),
+        "series_capable": False,
+        "plotly_type": "table",
+        "viz_params_required_keys": None,
+    },
+    ChartType.GAUGE: {
+        "category": "passthrough",
+        "required_aliases": (),
+        "series_capable": False,
+        "plotly_type": "indicator",
+        "viz_params_required_keys": ("domain", "gauge", "value"),
+    },
+    ChartType.FUNNEL: {
+        "category": "passthrough",
+        "required_aliases": (),
+        "series_capable": False,
+        "plotly_type": "funnel",
+        "viz_params_required_keys": ("x", "y"),
+    },
+    ChartType.SANKEY: {
+        "category": "sankey",
+        "required_aliases": ("source_alias", "target_alias", "value_alias"),
+        "series_capable": False,
+        "plotly_type": "sankey",
+        "viz_params_required_keys": None,
+    },
+    ChartType.HISTOGRAM: {
+        "category": "histogram",
+        "required_aliases": ("x_alias",),
+        "series_capable": True,
+        "plotly_type": "histogram",
+        "viz_params_required_keys": None,
+    },
+    ChartType.BOX: {
+        "category": "distribution",
+        "required_aliases": ("y_alias",),
+        "series_capable": False,
+        "plotly_type": "box",
+        "viz_params_required_keys": None,
+    },
+}
 
-# No visualization_settings needed at all — Metabase infers columns
-# directly from the query result.
-NO_VIZ_SETTINGS_TYPES = {ChartType.SCALAR, ChartType.TABLE}
 
-# Single dimension + single measure (graph.dimensions / graph.metrics).
-DIMENSION_MEASURE_TYPES = {ChartType.BAR, ChartType.LINE, ChartType.PIE, ChartType.ROW}
+# ── Derived sets — kept for backward compat ──────────────────
+# Every consumer (queryExecutor.py, dashboardPlanner.py, etc.) imports these
+# by name and checks membership the same way as before. Only the source of
+# truth changed; the values are identical to the old hand-maintained sets.
 
-# Two continuous measures plotted against each other rather than a
-# dimension against a measure. Uses x_alias/y_alias the same way, but
-# both aliases refer to measures, not a category + aggregate.
-MEASURE_PAIR_TYPES = {ChartType.SCATTER}
+SCALAR_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "scalar"}
 
-# Types that additionally accept an optional second breakout dimension
-# for grouped/stacked rendering (graph.dimensions gets a second entry).
-SERIES_CAPABLE_TYPES = {ChartType.BAR, ChartType.ROW, ChartType.LINE, ChartType.SCATTER, ChartType.HISTOGRAM}
-# Single raw numeric column, one row per record — not GROUP BY reduced.
-# Plotly bins the values into a distribution client-side.
-HISTOGRAM_TYPES = {ChartType.HISTOGRAM}
+NO_VIZ_SETTINGS_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] in ("scalar", "table")}
 
-# Single raw measure column (y_alias), optionally paired with a raw
-# categorical column (x_alias) for one box per category. Not GROUP BY
-# reduced — Plotly computes quartiles/outliers itself from the raw
-# x/y arrays; repeated x values group into one box automatically.
-DISTRIBUTION_TYPES = {ChartType.BOX}
+DIMENSION_MEASURE_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "dimension_measure"}
 
-# Three-column flow type: source category, target category, weight/count.
-# Dasher builds the actual sankey node/link structure server-side from
-# real rows (dedup labels, map to indices) — the LLM only picks which
-# SQL columns are source/target/value, same trust model as x_alias/y_alias
-# elsewhere. Hand-deriving node/link indices was tried and failed at
-# real-world cardinality (15+ categories), so this isn't LLM-authored.
-SANKEY_TYPES = {ChartType.SANKEY}
+MEASURE_PAIR_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "measure_pair"}
 
-TIER_A_TYPES = (SCALAR_TYPES | NO_VIZ_SETTINGS_TYPES | DIMENSION_MEASURE_TYPES | MEASURE_PAIR_TYPES | HISTOGRAM_TYPES | DISTRIBUTION_TYPES | SANKEY_TYPES)
+SERIES_CAPABLE_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["series_capable"]}
 
+HISTOGRAM_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "histogram"}
 
+DISTRIBUTION_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "distribution"}
 
-# ── Tier B — generic passthrough ─────────────────────────────
-# The shape of visualization_settings varies per instance (which
-# percentile bands, which stage order, which columns split into rows
-# vs. columns), so Dasher does not pre-build it. The LLM supplies
-# viz_params directly — a dict matching what Metabase expects for that
-# display type — and Dasher does light shape validation, not full
-# re-derivation. Metabase render failures route through the existing
-# self-healing cycle same as any other chart error.
+SANKEY_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "sankey"}
 
-# PIVOT excluded: Metabase only supports pivot tables for GUI query-builder
-# cards, never native SQL cards, which is what Dasher always sends.
+PASSTHROUGH_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "passthrough"}
 
-PASSTHROUGH_TYPES = {ChartType.GAUGE, ChartType.FUNNEL}
+# Everything with structured params Dasher builds itself — i.e. every
+# registered type except passthrough (which the LLM hand-writes viz_params
+# for) and PIVOT (unsupported, has no registry entry at all).
+TIER_A_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] != "passthrough"}
 
-_UNSUPPORTED_TYPES = {ChartType.PIVOT}
-CHART_TYPE_VALUES = [t.value for t in ChartType if t not in _UNSUPPORTED_TYPES]
+# Iterates ChartType (not the registry) to preserve the original enum-order
+# list; PIVOT is excluded because it has no registry entry.
+CHART_TYPE_VALUES = [t.value for t in ChartType if t in CHART_TYPE_REGISTRY]
 
 CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a display string in
   SQL ("2m 15s", "$1,200") — it breaks ORDER BY (sorts lexically) and
@@ -98,17 +170,16 @@ CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a di
   the SQL returns the raw number. (Pie has no x/y axes — x_label/y_label
   don't apply there, the dimension's own values are the labels.)
 - scalar: query returns exactly one row, one column. No extra config needed.
-- bar, row, line, pie: first column is a dimension, second is a measure.
-  (row = horizontal bar, better for long category labels.)
+- bar, line, pie: first column is a dimension, second is a measure.  
   pie represents part-of-whole share and works best with few categories;
   prefer bar over pie for precise magnitude comparison.
 - scatter: both columns are continuous measures — use for correlation
   between two measures, not a time trend.
 - table: result has more than two columns, or doesn't reduce cleanly to a
   single dimension + measure pair. No extra config needed.
-- bar/row/line/scatter/histogram can take a series_alias — a second
+- bar/line/scatter/histogram can take a series_alias — a second
   dimension to group by within each category (groups/stacks for
-  bar/row/line, separate colored traces for scatter, overlaid
+  bar/line, separate colored traces for scatter, overlaid
   semi-transparent distributions for histogram).
   MANDATORY: if your SQL GROUPs BY two dimension columns, series_alias
   must be set to the second one — the chart cannot show data it isn't

@@ -88,7 +88,7 @@ TOOL_SCHEMAS = [
                     "series_alias": {
                         "type": "string",
                         "description": (
-                            "Optional. Only for bar/row/line/scatter/histogram  charts. Exact alias of a second "
+                            "Optional. Only for bar/line/scatter/histogram  charts. Exact alias of a second "
                             "dimension to group or stack by within each x-axis category. "
                             "Use this instead of building separate charts when the goal "
                             "requires comparing across two dimensions at once."
@@ -179,7 +179,7 @@ TOOL_SCHEMAS = [
                     },
                     "series_alias": {
                         "type": "string",
-                        "description": "Optional. Only for bar/row/line/scatter/histogram charts. Exact alias of a second dimension to group or stack by.",
+                        "description": "Optional. Only for bar/line/scatter/histogram charts. Exact alias of a second dimension to group or stack by.",
                     },
                     "source_alias": {
                         "type": "string",
@@ -260,7 +260,7 @@ Table: "{table_name}"
 Available columns (name | base_type | semantic_role):
 {field_reference}
 
-Dataset profile (column stats):
+Dataset profile (stats, distinct_count, value_counts, correlations, grouped_stats):
 {profile_summary}
 {existing_charts_section}
 Goal: {goal}

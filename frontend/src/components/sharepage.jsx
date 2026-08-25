@@ -65,10 +65,7 @@ function PublicChartCard({ chart }) {
     )
   }
 
-  const rowCount = chart.rows?.length ?? 0
-  const chartHeight = chart.chart_type === 'row'
-    ? Math.max(320, rowCount * 28 + 100)
-    : 320
+  const chartHeight =  320
 
   const plotLayout = {
     autosize: true,
@@ -121,7 +118,7 @@ function PublicChartCard({ chart }) {
               data={chart.spec.data ?? []}
               layout={plotLayout}
               useResizeHandler
-              style={{ width: '100%', height: chart.chart_type === 'row' ? `${chartHeight}px` : '70vh' }}
+              style={{ width: '100%', height: '70vh' }}
               config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
             />
           </div>
@@ -209,7 +206,7 @@ export default function SharePage() {
 
               <div className="py-7 grid grid-cols-1 md:grid-cols-3 gap-6">
                 {(data.charts ?? []).map((chart, i) => (
-                  <div key={chart.chart_title ?? i} className={chart.chart_type === 'row' ? 'md:col-span-3' : ''}>
+                  <div key={chart.chart_title ?? i} >
                     <PublicChartCard chart={chart} />
                   </div>
                 ))}

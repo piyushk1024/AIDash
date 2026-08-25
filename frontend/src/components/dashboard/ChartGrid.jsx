@@ -115,15 +115,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
     )
   }
 
-  // Horizontal bar ('row') charts need height proportional to category
-  // count — a fixed height either clips long category lists or wastes
-  // space on short ones. ~28px per category + 100px baseline for
-  // title/axes/margins is the standard formula for this (same approach
-  // used across Highcharts, Chart.js, Plotly Dash for dynamic bar charts).
-  const rowCount = card.rows?.length ?? 0
-  const chartHeight = card.chart_type === 'row'
-    ? Math.max(320, rowCount * 28 + 100)
-    : 320
+  const chartHeight = 320
 
   const plotLayout = {
     autosize: true,
@@ -181,7 +173,7 @@ function RenderedChartCard({ card, fieldMap, cardState, onEdit, onCancel, onSubm
               data={card.spec.data ?? []}
               layout={plotLayout}
               useResizeHandler
-              style={{ width: '100%', height: card.chart_type === 'row' ? `${chartHeight}px` : '70vh' }}
+              style={{ width: '100%', height: '70vh'}}
               config={{ displayModeBar: false, responsive: true, scrollZoom: true }}
             />
           </div>
@@ -317,13 +309,8 @@ export default forwardRef(function ChartGrid({ cards, datasetId, fieldMap, mode 
   }
 
   function renderCard(card) {
-    return (
-      // Horizontal bar ('row') charts put category labels on the y-axis,
-      // where they compete with a fixed-width column — long labels get
-      // cramped in a half-width card. Giving 'row' charts the full row
-      // is a standard horizontal-bar-chart practice, not specific to any
-      // one dataset's label lengths.
-      <div key={card.card_id ?? card.chart_title} className={card.chart_type === 'row' ? 'md:col-span-2' : ''}>
+    return (      
+      <div key={card.card_id ?? card.chart_title} >
         <RenderedChartCard
           card={card}
           fieldMap={fieldMap}

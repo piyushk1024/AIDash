@@ -36,9 +36,40 @@ def _build_profile_summary(profile: dict) -> str:
     lines = []
     for col in profile.get("columns", []):
         name = col["column_name"]
-        stats = col.get("stats", {})
+        parts = []
+
+        stats = col.get("stats")
         if stats:
-            lines.append(f"  - {name}: {stats}")
+            parts.append(f"stats={stats}")
+
+        distinct_count = col.get("distinct_count")
+        if distinct_count is not None:
+            parts.append(f"distinct_count={distinct_count}")
+
+        # value_counts arrives pre-sorted descending (profiler.py caps at 10);
+        # cap further to top 5 here to bound prompt size on wide datasets.
+        value_counts = col.get("value_counts")
+        if value_counts:
+            top_counts = dict(list(value_counts.items())[:5])
+            parts.append(f"value_counts(top5)={top_counts}")
+
+        correlations = col.get("correlations")
+        if correlations:
+            parts.append(f"correlations={correlations}")
+
+        if parts:
+            lines.append(f"  - {name}: " + " | ".join(parts))
+
+    grouped_stats = profile.get("grouped_stats")
+    if grouped_stats:
+        lines.append(
+            "\nGrouped stats (categorical col -> numeric col means per group; "
+            "_spread_cv = std/mean across group means, below ~0.10 means the "
+            "groups barely differ):"
+        )
+        for cat_col, group_data in grouped_stats.items():
+            lines.append(f"  - {cat_col}: {group_data}")
+
     return "\n".join(lines)
 
 
@@ -242,7 +273,7 @@ async def stream_agent(
             observation, trace_entry, healed = await dispatch_build_and_add_chart(
                 tool_args=tool_args, pool=pool, field_map=field_map,
                 charts_built=charts_built, step=iteration + 1, table_name=table_name,
-            )
+                profile=profile,)
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
             yield {"type": "chart_built" if observation.get("success") else "chart_failed", **trace_entry}
@@ -251,7 +282,7 @@ async def stream_agent(
             observation, trace_entry, healed = await dispatch_edit_existing_chart(
                 tool_args=tool_args, pool=pool, field_map=field_map,
                 charts_built=charts_built, step=iteration + 1, table_name=table_name,
-            )
+                profile=profile,)
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
             yield {"type": "chart_edited" if observation.get("success") else "chart_edit_failed", **trace_entry}

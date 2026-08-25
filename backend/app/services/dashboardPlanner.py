@@ -10,26 +10,7 @@ from app.schemas.chartTypes import (
     HISTOGRAM_TYPES,
     DISTRIBUTION_TYPES,
 )
-
-PIE_MAX_DISTINCT = 10
-HISTOGRAM_MIN_DISTINCT = 15
-CATEGORY_MAX_DISTINCT = 30
-SERIES_MAX_DISTINCT = 10
-SANKEY_NODE_MAX_DISTINCT = 15
-
-
-def _distinct_count_for_alias(profile: dict, alias: str | None) -> int | None:
-    # Cardinality/legibility guardrail lookup. Guidance instructs histogram/
-    # box/pie/sankey source columns to use a SQL alias matching the source
-    # column name, so a direct name match covers the normal case. Fails
-    # open (returns None) on any mismatch rather than blocking a chart over
-    # an alias the guardrail can't confidently resolve.
-    if not alias:
-        return None
-    for col in profile.get("columns", []):
-        if col.get("column_name") == alias:
-            return col.get("distinct_count")
-    return None
+from app.services.chartValidation import apply_cardinality_guardrail
 
 def _build_chartable_context(semantics: dict, profile: dict, field_map: dict) -> tuple[set, dict, list]:
     """
@@ -140,7 +121,7 @@ Return ONLY a JSON object with exactly these fields:
       "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
       "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
       "y_label": "optional — display axis title for y_alias, same rule as x_label",
-      "series_alias": "optional — second dimension to group/stack by, only for bar/row/line/scatter/histogram",
+      "series_alias": "optional — second dimension to group/stack by, only for bar/line/scatter/histogram",
       "source_alias": "optional — required for sankey only, exact alias of the source category column",
       "target_alias": "optional — required for sankey only, exact alias of the target category column",
       "value_alias": "optional — required for sankey only, exact alias of the count/weight column",
@@ -212,34 +193,14 @@ async def generate_dashboard_plan(
 
         # Cardinality/legibility guardrail — a chart can pass every alias
         # check above and still be unreadable if the underlying column has
-        # too many (pie/bar/row/box/sankey) or too few (histogram) distinct
+        # too many (pie/bar/box/sankey) or too few (histogram) distinct
         # values for that chart type to represent clearly. Runs before the
-        # SQL guard below since it's cheap and needs no parsing.
-        x_distinct = _distinct_count_for_alias(profile, chart.get("x_alias"))
-
-        if chart_type == ChartType.PIE and x_distinct is not None and x_distinct > PIE_MAX_DISTINCT:
-            # Pie and bar share the same SQL shape (one dimension + one
-            # measure, already grouped) — downgrade in place instead of
-            # dropping, no re-query needed.
-            chart["chart_type"] = ChartType.BAR.value
-            chart_type = ChartType.BAR
-
-        if chart_type in HISTOGRAM_TYPES and x_distinct is not None and x_distinct < HISTOGRAM_MIN_DISTINCT:
+        # SQL guard below since it's cheap and needs no parsing. Violation
+        # reason is discarded here — pipeline mode silently drops rather
+        # than surfacing an error (no user to report to at plan-gen time).
+        violation = apply_cardinality_guardrail(chart, profile)
+        if violation:
             continue
-
-        if chart_type in (ChartType.BAR, ChartType.ROW, ChartType.BOX) and x_distinct is not None and x_distinct > CATEGORY_MAX_DISTINCT:
-            continue
-
-        series_distinct = _distinct_count_for_alias(profile, chart.get("series_alias"))
-        if series_distinct is not None and series_distinct > SERIES_MAX_DISTINCT:
-            continue
-
-        if chart_type == ChartType.SANKEY:
-            source_distinct = _distinct_count_for_alias(profile, chart.get("source_alias"))
-            target_distinct = _distinct_count_for_alias(profile, chart.get("target_alias"))
-            if (source_distinct is not None and source_distinct > SANKEY_NODE_MAX_DISTINCT) or \
-               (target_distinct is not None and target_distinct > SANKEY_NODE_MAX_DISTINCT):
-                continue
 
         try:
             validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
