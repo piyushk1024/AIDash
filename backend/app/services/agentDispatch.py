@@ -2,6 +2,7 @@ import logging
 from app.services.sqlGuard import validate_sql
 from app.services.cardBuilder import build_card_with_healing
 from app.services.chartValidation import missing_required_fields, apply_cardinality_guardrail
+from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_REGISTRY, ChartType
 
 logger = logging.getLogger(__name__)
 
@@ -10,11 +11,12 @@ def _extract_chart_spec(tool_args: dict) -> dict:
     return {
         "chart_title": tool_args["chart_title"],
         "chart_type": tool_args["chart_type"],
-        "sql": tool_args["sql"],
+        "sql": tool_args.get("sql"),
         "x_alias": tool_args.get("x_alias"),
         "y_alias": tool_args.get("y_alias"),
         "series_alias": tool_args.get("series_alias"),
         "viz_params": tool_args.get("viz_params"),
+        "columns": tool_args.get("columns"),
     }
 
 
@@ -68,7 +70,13 @@ async def _dispatch_chart_upsert(
     tool_label = "build_and_add_chart" if mode == "build" else "edit_existing_chart"
     card_id = tool_args.get("card_id") if mode == "edit" else None
 
-    required = ("chart_title", "chart_type", "sql")
+    chart_type_str = tool_args.get("chart_type")
+    is_nonSQL = (
+        chart_type_str in CHART_TYPE_VALUES
+        and not CHART_TYPE_REGISTRY[ChartType(chart_type_str)]["requires_sql"]
+    )
+
+    required = ("chart_title", "chart_type") if is_nonSQL else ("chart_title", "chart_type", "sql")
     if mode == "edit":
         required = required + ("card_id",)
     missing = missing_required_fields(tool_args, required)
@@ -95,24 +103,25 @@ async def _dispatch_chart_upsert(
 
     chart_spec = _extract_chart_spec(tool_args)
 
-    try:
-        validate_sql(chart_spec["sql"], table_name, context=chart_spec["chart_title"])
-    except ValueError:
-        observation = {"error": "SQL validation failed."}
-        trace_entry = {
-            "step": step, "tool": tool_label, "reasoning": reasoning,
-            "card_id": card_id, "chart_title": chart_spec["chart_title"], "observation": observation,
-        }
-        return observation, trace_entry, False
+    if not is_nonSQL:
+        try:
+            validate_sql(chart_spec["sql"], table_name, context=chart_spec["chart_title"])
+        except ValueError:
+            observation = {"error": "SQL validation failed."}
+            trace_entry = {
+                "step": step, "tool": tool_label, "reasoning": reasoning,
+                "card_id": card_id, "chart_title": chart_spec["chart_title"], "observation": observation,
+            }
+            return observation, trace_entry, False
 
-    violation = apply_cardinality_guardrail(chart_spec, profile)
-    if violation:
-        observation = {"error": violation}
-        trace_entry = {
-            "step": step, "tool": tool_label, "reasoning": reasoning,
-            "card_id": card_id, "chart_title": chart_spec["chart_title"], "observation": observation,
-        }
-        return observation, trace_entry, False
+        violation = apply_cardinality_guardrail(chart_spec, profile)
+        if violation:
+            observation = {"error": violation}
+            trace_entry = {
+                "step": step, "tool": tool_label, "reasoning": reasoning,
+                "card_id": card_id, "chart_title": chart_spec["chart_title"], "observation": observation,
+            }
+            return observation, trace_entry, False
 
     existing_id = card_id if mode == "edit" else None
     result, error = await build_card_with_healing(chart_spec, field_map, pool, table_name, existing_id=existing_id,profile=profile)

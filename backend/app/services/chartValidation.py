@@ -95,7 +95,8 @@ def clean_and_validate_charts(charts: list) -> list:
     seen_titles = set()
     cleaned = []
     for chart in charts:
-        if missing_required_fields(chart, ("sql", "chart_title", "chart_type")):
+        required = ("chart_title", "chart_type") if not chart.get("sql") else ("sql", "chart_title", "chart_type")
+        if missing_required_fields(chart, required):
             continue
         if chart["chart_type"] not in CHART_TYPE_VALUES:
             continue

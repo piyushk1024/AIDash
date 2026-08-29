@@ -35,12 +35,16 @@ async def build_card_with_healing(
     healed = False
 
     try:
-        query_result = await execute_chart_query(pool, chart, table_name)
+        query_result = await execute_chart_query(pool, chart, table_name, profile=profile)
     except Exception as e:
         logger.warning(f"Chart query failed for '{chart.get('chart_title')}': {e}")
+        if not chart.get("sql"):
+            logger.error("Chart '%s' failed permanently, no SQL to heal. error=%s",
+                         original_chart.get("chart_title"), str(e))
+            return None, _error_entry(original_chart)
         try:
             chart = await heal_chart_spec(chart, str(e), field_map, table_name)
-            query_result = await execute_chart_query(pool, chart, table_name)
+            query_result = await execute_chart_query(pool, chart, table_name, profile=profile)
             healed = True
         except Exception as e2:
             logger.error("Chart '%s' failed permanently. error=%s, heal_error=%s",
@@ -58,6 +62,7 @@ def _clean_entry(chart: dict, card_id: str, query_result: dict) -> dict:
         "chart_title": chart.get("chart_title", "Untitled chart"),
         "chart_type":  chart.get("chart_type"),
         "sql":         chart.get("sql"),
+        "columns":     chart.get("columns"),
         "rows":        query_result["rows"],
         "spec":        query_result["spec"],
         "healed":      False,

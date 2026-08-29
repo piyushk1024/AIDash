@@ -2,7 +2,7 @@ import logging
 from app.services.sqlGuard import validate_sql
 from decimal import Decimal
 import math
-from app.schemas.chartTypes import ChartType, CHART_TYPE_REGISTRY
+from app.schemas.chartTypes import ChartType, CHART_TYPE_REGISTRY, CHART_TYPE_VALUES
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ def _cap_tabular_rows(rows: list[dict], chart: dict) -> list[dict]:
             pass
     return rows[:TABLE_ROW_CAP]
 
-async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
+async def execute_chart_query(pool, chart: dict, table_name: str, profile: dict | None = None) -> dict:
     """
     Runs chart["sql"] through sqlGuard, executes it against the pool, and
     builds a Plotly spec (data + layout) from the result rows and chart_type.
@@ -33,6 +33,10 @@ async def execute_chart_query(pool, chart: dict, table_name: str) -> dict:
     (cardBuilder) is expected to route these through the existing
     self-healing retry cycle.
     """
+    chart_type_str = chart.get("chart_type")
+    if chart_type_str in CHART_TYPE_VALUES and CHART_TYPE_REGISTRY[ChartType(chart_type_str)]["category"] == "correlation":
+        return _build_correlation_spec(profile, chart)
+    
     validate_sql(chart["sql"], table_name, context=chart.get("chart_title", ""))
 
     async with pool.acquire() as conn:
@@ -258,6 +262,46 @@ def _build_sankey_trace(rows: list[dict], chart: dict, title: str) -> dict:
         "node": {"label": labels},
         "link": {"source": source_idx, "target": target_idx, "value": values},
     }
+
+def _build_correlation_spec(profile: dict | None, chart: dict) -> dict:
+    title = chart.get("chart_title", "")
+    if not profile:
+        raise ValueError(f"Profile required for correlation heatmap ({title})")
+
+    all_numeric_cols = [
+        c["column_name"] for c in profile.get("columns", [])
+        if "correlations" in c
+    ]
+
+    requested = chart.get("columns")
+    if requested:
+        # silently drop any requested name that isn't a valid numeric column
+        numeric_cols = [c for c in requested if c in all_numeric_cols]
+    else:
+        numeric_cols = all_numeric_cols
+
+    if len(numeric_cols) < 2:
+        raise ValueError(f"Need at least 2 valid numeric columns for correlation heatmap ({title})")
+
+    corr_lookup = {
+        c["column_name"]: c["correlations"] for c in profile["columns"]
+        if "correlations" in c
+    }
+    z = [
+        [None if row_col == col_col else corr_lookup[row_col].get(col_col)
+         for col_col in numeric_cols]
+        for row_col in numeric_cols
+    ]
+
+    trace = {
+        "type": "heatmap",
+        "x": numeric_cols,
+        "y": numeric_cols,
+        "z": z,
+        "colorscale": "Plasma",
+    }
+    spec = {"data": [trace], "layout": {"title": {"text": title}}}
+    return {"rows": [], "spec": spec}
 
 def _substitute_row_values(node, row: dict):
     # LLM authors viz_params before the query runs, so it can't know

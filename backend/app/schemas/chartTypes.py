@@ -24,6 +24,7 @@ class ChartType(str, Enum):
     PIVOT = "pivot"
     HISTOGRAM = "histogram"
     BOX = "box"
+    HEATMAP = "heatmap"
 
 
 # ── Registry — single source of truth per type ──────────────
@@ -56,6 +57,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "indicator",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.BAR: {
         "category": "dimension_measure",
@@ -63,6 +65,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": True,
         "plotly_type": "bar",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.LINE: {
         "category": "dimension_measure",
@@ -70,6 +73,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": True,
         "plotly_type": "scatter",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.PIE: {
         "category": "dimension_measure",
@@ -77,6 +81,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "pie",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.SCATTER: {
         "category": "measure_pair",
@@ -84,6 +89,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": True,
         "plotly_type": "scatter",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.TABLE: {
         "category": "table",
@@ -91,6 +97,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "table",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.GAUGE: {
         "category": "passthrough",
@@ -98,6 +105,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "indicator",
         "viz_params_required_keys": ("domain", "gauge", "value"),
+         "requires_sql": True,
     },
     ChartType.FUNNEL: {
         "category": "passthrough",
@@ -105,6 +113,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "funnel",
         "viz_params_required_keys": ("x", "y"),
+         "requires_sql": True,
     },
     ChartType.SANKEY: {
         "category": "sankey",
@@ -112,6 +121,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "sankey",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.HISTOGRAM: {
         "category": "histogram",
@@ -119,6 +129,7 @@ CHART_TYPE_REGISTRY = {
         "series_capable": True,
         "plotly_type": "histogram",
         "viz_params_required_keys": None,
+         "requires_sql": True,
     },
     ChartType.BOX: {
         "category": "distribution",
@@ -126,6 +137,15 @@ CHART_TYPE_REGISTRY = {
         "series_capable": False,
         "plotly_type": "box",
         "viz_params_required_keys": None,
+         "requires_sql": True,
+    },
+    ChartType.HEATMAP: {
+        "category": "correlation",
+        "required_aliases": (),
+        "series_capable": False,
+        "plotly_type": "heatmap",
+        "viz_params_required_keys": None,
+         "requires_sql": False,
     },
 }
 
@@ -152,6 +172,9 @@ DISTRIBUTION_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"]
 SANKEY_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "sankey"}
 
 PASSTHROUGH_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "passthrough"}
+
+CORRELATION_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "correlation"}
+NO_SQL_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if not r["requires_sql"]}
 
 # Everything with structured params Dasher builds itself — i.e. every
 # registered type except passthrough (which the LLM hand-writes viz_params
@@ -217,4 +240,11 @@ CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a di
   column, x_alias = categorical column. Do not GROUP BY or pre-compute
   percentiles — Plotly derives quartiles/outliers from raw values. Same
   ORDER BY RANDOM() LIMIT 5000 guidance as histogram if the table is large.
+- heatmap: correlation matrix computed automatically from profiled data
+  server-side. Do NOT write SQL for this — leave sql empty/null. No
+  x_alias/y_alias/viz_params needed. Optionally set columns to a list of
+  specific numeric column names for a focused matrix (e.g. columns:
+  ["price", "rating", "reviews"]); omit columns for the full matrix across
+  all numeric columns. Use only when the user explicitly asks for a
+  correlation matrix or heatmap, optionally scoped to named columns.
 """

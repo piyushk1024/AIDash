@@ -68,7 +68,9 @@ doesn't support that many, more if it's unusually rich. Consider:
 - Rankings and extremes (top/bottom performers)
 - Distributions across categorical dimensions
 - Trends over time where date columns exist
-- Correlations between measures
+- Correlations between measures — if 3+ numeric measures exist, consider one
+  heatmap chart covering all of them (or a focused subset) instead of several
+  separate scatter charts; use scatter only for a single pair
 - Derived metrics: ratios, rates, percentages computed in SQL
 - Statistical spread: percentiles, variance
 - Multi-factor comparisons (e.g. how one segment differs from another, or
@@ -116,7 +118,7 @@ Return ONLY a JSON object with exactly these fields:
     {{
       "chart_title": "string",
       "chart_type": "one of the valid chart types listed above",
-      "sql": "SELECT ...",
+      "sql": "SELECT ... (leave as empty string for chart types that don't require SQL, e.g. heatmap)",
       "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
       "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
       "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
@@ -125,6 +127,7 @@ Return ONLY a JSON object with exactly these fields:
       "source_alias": "optional — required for sankey only, exact alias of the source category column",
       "target_alias": "optional — required for sankey only, exact alias of the target category column",
       "value_alias": "optional — required for sankey only, exact alias of the count/weight column",
+      "columns": "optional list of column name strings — only for heatmap, correlate just these numeric columns; omit for the full matrix across all numeric columns",
       "viz_params": "optional dict — required for gauge/funnel only, omit otherwise (including for sankey)",
       "reasoning": "one sentence tying this chart to a specific analytical question"
     }}
@@ -189,6 +192,9 @@ async def generate_dashboard_plan(
         if chart_type in HISTOGRAM_TYPES and not chart.get("x_alias"):
             continue
         if chart_type in DISTRIBUTION_TYPES and not chart.get("y_alias"):
+            continue
+        if not chart.get("sql"):
+            safe_charts.append(chart)
             continue
 
         # Cardinality/legibility guardrail — a chart can pass every alias

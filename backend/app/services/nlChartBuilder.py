@@ -1,7 +1,7 @@
 import json
 from app.services.llm import generate
 from app.services.sqlGuard import validate_sql
-from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES, CHART_TYPE_REGISTRY, ChartType
 from app.services.chartValidation import missing_required_fields, apply_cardinality_guardrail
 
 
@@ -41,7 +41,7 @@ Return ONLY a JSON object with exactly these fields:
 {{
   "chart_title": "string",
   "chart_type": "one of the valid chart types listed above",
-  "sql": "SELECT ...",
+  "sql": "SELECT ... (leave as empty string for chart types that don't require SQL, e.g. heatmap)"
   "x_alias": "exact column alias for the dimension, null for scalar/table/passthrough types",
   "y_alias": "exact column alias for the measure, null for scalar/table/passthrough types",
   "x_label": "optional — display axis title for x_alias, only if the alias itself is a poor label",
@@ -50,6 +50,7 @@ Return ONLY a JSON object with exactly these fields:
   "source_alias": "optional — required for sankey only, exact alias of the source category column",
   "target_alias": "optional — required for sankey only, exact alias of the target category column",
   "value_alias": "optional — required for sankey only, exact alias of the count/weight column",
+    "columns": "optional list of column name strings — only for heatmap, correlate just these numeric columns; omit for the full matrix across all numeric columns",
   "viz_params": "optional dict — required for gauge/funnel only, omit otherwise (including for sankey)",
   "reasoning": "one sentence explaining what this chart shows"
 }}
@@ -119,17 +120,20 @@ async def build_chart_from_prompt(
         raw = raw.split("```")[1].split("```")[0].strip()
 
     chart = json.loads(raw)
-    required = ("chart_title", "chart_type", "sql")
-    missing = missing_required_fields(chart, required)
-
-    if missing:
-        raise ValueError(f"NL chart builder response missing required field(s): {missing}")
-
     if chart.get("chart_type") not in CHART_TYPE_VALUES:
         raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")
 
-    validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
-    violation = apply_cardinality_guardrail(chart, profile)
-    if violation:
-        raise ValueError(violation)
+    is_nonSQL = not CHART_TYPE_REGISTRY[ChartType(chart["chart_type"])]["requires_sql"]
+
+    required = ("chart_title", "chart_type") if is_nonSQL else ("chart_title", "chart_type", "sql")
+    missing = missing_required_fields(chart, required)
+    if missing:
+        raise ValueError(f"NL chart builder response missing required field(s): {missing}")
+
+    if not is_nonSQL:
+        validate_sql(chart["sql"], context=chart.get("chart_title", ""), expected_table=table_name)
+        violation = apply_cardinality_guardrail(chart, profile)
+        if violation:
+            raise ValueError(violation)
+        
     return chart

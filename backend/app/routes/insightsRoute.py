@@ -6,9 +6,10 @@ from app.services.database import (
     persist_insight,
     get_insights_for_dataset,
     delete_insight,
-    get_dataset_owner
+    get_dataset_owner,
+    get_cached_profile
 )
-from app.services.profiler import profile_csv
+
 from app.services.insightGenerator import generate_insights
 from app.services.queryExecutor import execute_raw_query
 from app.dependencies import get_db, get_current_user
@@ -39,7 +40,7 @@ async def post_insight(
     table_name = metadata["table_name"]
     field_map = metadata["field_map"]
 
-    profile = await profile_csv(db, table_name, dataset_id)
+    profile = await get_cached_profile(db, dataset_id)
 
     async def execute_sql_fn(sql: str) -> dict:
         return await execute_raw_query(db, sql, table_name)

@@ -12,10 +12,10 @@ from app.services.database import (
     update_dashboard_plan,
     persist_profile_json,
     set_last_active_mode,
-    mark_dashboard_complete
+    mark_dashboard_complete,
+    get_cached_profile
 )
 
-from app.services.profiler import profile_csv
 from app.services.agentOrchestrator import run_agent, stream_agent
 from app.services.reportGenerator import generate_agent_report_pdf
 from app.services.llm import LLMUnavailableError
@@ -59,8 +59,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     if not metadata:
         raise HTTPException(status_code=404, detail="Dataset metadata not found.")
 
-    profile = await profile_csv(db, metadata["table_name"], dataset_id)
-    await persist_profile_json(db, dataset_id, profile)
+    profile = await get_cached_profile(db, dataset_id)   
 
     goal = (goal_raw or "").strip() or DEFAULT_GOAL
 

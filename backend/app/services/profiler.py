@@ -66,6 +66,11 @@ async def profile_csv(pool, table_name: str, dataset_id: str) -> dict:
 
     df = pd.DataFrame(rows)
 
+    for col in df.select_dtypes(include="object").columns:
+        converted = pd.to_numeric(df[col], errors="coerce")
+        if converted.notna().sum() == df[col].notna().sum():
+            df[col] = converted
+
     numeric_cols = df.select_dtypes(include="number").columns.tolist()
     categorical_cols = [c for c in df.columns if c not in numeric_cols]
 

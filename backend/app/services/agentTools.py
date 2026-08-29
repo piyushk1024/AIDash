@@ -1,4 +1,4 @@
-from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_GUIDANCE
+from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_GUIDANCE, CHART_TYPE_REGISTRY, ChartType
 
 TOOL_SCHEMAS = [
     {
@@ -20,7 +20,7 @@ TOOL_SCHEMAS = [
                             "(use GROUP BY, COUNT, AVG, SUM, RANK, etc.). "
                             "No semicolons. Double-quote all table and column names. "
                             "Boolean columns cannot be passed directly to SUM/AVG — "
-                            "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."
+                            "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."                            
                         ),
                     },
                     "reasoning": {
@@ -67,6 +67,8 @@ TOOL_SCHEMAS = [
                             "Alias all output columns clearly. "
                             "Boolean columns cannot be passed directly to SUM/AVG — "
                             "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."
+                            "For chart types that don't require SQL (e.g. heatmap), pass an "
+                            "empty string \"\" — see chart type guidance below."
                         ),
                     },
                     "x_alias": {
@@ -105,6 +107,16 @@ TOOL_SCHEMAS = [
                     "value_alias": {
                         "type": "string",
                         "description": "Required for sankey only. Exact alias of the count/weight column in the SQL.",
+                    },
+                    "columns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional. Only for heatmap. A list of specific numeric "
+                            "column names to correlate — e.g. [\"price\", \"rating\", "
+                            "\"reviews\"]. Omit to correlate all numeric columns in the "
+                            "dataset."
+                        ),
                     },
                     "viz_params": {
                         "type": "object",
@@ -159,6 +171,8 @@ TOOL_SCHEMAS = [
                             "table and column names. Alias all output columns clearly. "
                             "Boolean columns cannot be passed directly to SUM/AVG — "
                             "cast first, e.g. SUM(CASE WHEN \"flag_col\" THEN 1 ELSE 0 END)."
+                            "For chart types that don't require SQL (e.g. heatmap), pass an "
+                            "empty string \"\" — see chart type guidance below."
                         ),
                     },
                     "x_alias": {
@@ -192,6 +206,15 @@ TOOL_SCHEMAS = [
                     "value_alias": {
                         "type": "string",
                         "description": "Required for sankey only. Exact alias of the count/weight column in the SQL.",
+                    },
+                    "columns": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Optional. Only for heatmap. A list of specific numeric "
+                            "column names to correlate. Omit to correlate all numeric "
+                            "columns in the dataset."
+                        ),
                     },
                     "viz_params": {
                         "type": "object",
