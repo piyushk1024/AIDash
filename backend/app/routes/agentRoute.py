@@ -9,8 +9,7 @@ from app.services.database import (
     get_dataset_metadata,
     get_dataset_owner,
     persist_dashboard_plan,
-    update_dashboard_plan,
-    persist_profile_json,
+    update_dashboard_plan,    
     set_last_active_mode,
     mark_dashboard_complete,
     get_cached_profile

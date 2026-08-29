@@ -1,4 +1,4 @@
-from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_GUIDANCE, CHART_TYPE_REGISTRY, ChartType
+from app.schemas.chartTypes import CHART_TYPE_VALUES, CHART_TYPE_GUIDANCE
 
 TOOL_SCHEMAS = [
     {
