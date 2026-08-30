@@ -24,3 +24,4 @@ locust/*.log
 locust/results_*
 locust/stats_*
 /frontend/public/*.py
+!backend/geo_seed/data/*.csv

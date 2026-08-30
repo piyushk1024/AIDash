@@ -276,3 +276,7 @@ npm run dev --prefix frontend
 - [ ] LLM evals regression harness: classification confidence, chart build success rate, plan relevance, run as part of CI
 - [ ] Heatmap/correlation chart, statistical trend and regression overlays
 - [ ] MCP server: Dasher pipeline exposed as MCP tools for Claude Desktop and other agents
+
+## Acknowledgements
+
+- City reference data for the map chart type sourced from the [SimpleMaps World Cities Database](https://simplemaps.com/data/world-cities) (free version), MIT licensed.
