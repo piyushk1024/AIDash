@@ -25,3 +25,4 @@ class InferSemanticsResponse(BaseModel):
     identifiers: List[SemanticColumn]
     unknown: List[SemanticColumn]
     notes: List[str]
+    country: Optional[str] = None  # 'IN' or 'US', null if not confidently inferable

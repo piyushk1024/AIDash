@@ -45,6 +45,9 @@ async def execute_chart_query(pool, chart: dict, table_name: str, profile: dict 
     if chart.get("chart_type") == ChartType.TABLE.value:
         rows = _cap_tabular_rows(rows, chart)
 
+    if chart_type_str in CHART_TYPE_VALUES and CHART_TYPE_REGISTRY[ChartType(chart_type_str)]["category"] == "map":
+        return await _build_map_spec(pool, rows, chart)
+
     spec = _build_plotly_spec(rows, chart)
     return {"rows": rows, "spec": spec}
 
@@ -302,6 +305,68 @@ def _build_correlation_spec(profile: dict | None, chart: dict) -> dict:
     }
     spec = {"data": [trace], "layout": {"title": {"text": title}}}
     return {"rows": [], "spec": spec}
+
+async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
+    from app.services.geoReference import match_cities
+    from app.services.chartValidation import build_match_rate_note
+
+    title = chart.get("chart_title", "")
+    x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
+    _require_aliases(ChartType.MAP, x_alias, y_alias, title)
+
+    country = chart.get("country")
+    if not country:
+        raise ValueError(f"Map chart missing country ({title})")
+
+    match_result = await match_cities(pool, rows, x_alias, country)
+    matched_rows = [r for r in match_result["rows"] if r["match_status"] == "matched"]
+
+    if not matched_rows:
+        raise ValueError(f"No cities could be matched for map chart ({title})")
+
+    raw = [_row_value(r, y_alias, title) for r in matched_rows]
+    values = [v if isinstance(v, (int, float)) and v > 0 else 0 for v in raw]
+    scaled = [math.sqrt(v) for v in values]
+    peak = max(scaled)
+    max_marker_size = 40
+    sizeref = (2 * peak / (max_marker_size ** 2)) if peak > 0 else 1
+
+    y_display = chart.get("y_label") or y_alias
+
+    trace = {
+        "type": "scattermap",
+        "mode": "markers",
+        "lat": [r["lat"] for r in matched_rows],
+        "lon": [r["lon"] for r in matched_rows],
+        "text": [f"{_row_value(r, x_alias, title)}<br>{y_display}: {_row_value(r, y_alias, title)}" for r in matched_rows],
+        "hovertemplate": "%{text}<extra></extra>",
+        "marker": {
+            "size": scaled,
+            "sizemode": "area",
+            "sizeref": sizeref,
+            "sizemin": 4,
+        },
+    }
+
+    lats = [r["lat"] for r in matched_rows]
+    lons = [r["lon"] for r in matched_rows]
+    center_lat = (min(lats) + max(lats)) / 2
+    center_lon = (min(lons) + max(lons)) / 2
+
+    layout = {
+        "title": {"text": title},
+        "map": {
+            "style": "open-street-map",
+            "center": {"lat": center_lat, "lon": center_lon},
+            "zoom": 3,
+        },
+    }
+    
+    note = build_match_rate_note(match_result["matched_count"], match_result["total_count"])
+    if note:
+        layout["annotations"] = [{"text": note, "showarrow": False, "x": 0, "y": -0.1, "xref": "paper", "yref": "paper"}]
+
+    return {"rows": matched_rows, "spec": {"data": [trace], "layout": layout}}
 
 def _substitute_row_values(node, row: dict):
     # LLM authors viz_params before the query runs, so it can't know

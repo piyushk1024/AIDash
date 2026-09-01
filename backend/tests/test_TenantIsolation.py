@@ -28,7 +28,10 @@ DATASET_ID  = "test-dataset-id"
 OWNER_ID    = "owner-user-id"
 ATTACKER_ID = "attacker-user-id"
 
-MOCK_SEMANTICS = {"dataset_grain": "row per transaction"}
+MOCK_SEMANTICS = {
+    "semantics_json": {"dataset_grain": "row per transaction"},
+    "business_hint": None,
+}
 
 
 def make_mock_attacker():

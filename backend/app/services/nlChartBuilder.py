@@ -1,7 +1,7 @@
 import json
 from app.services.llm import generate
 from app.services.sqlGuard import validate_sql
-from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, CHART_TYPE_VALUES, CHART_TYPE_REGISTRY, ChartType
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, MAP_GUIDANCE, CHART_TYPE_VALUES, CHART_TYPE_REGISTRY, ChartType
 from app.services.chartValidation import missing_required_fields, apply_cardinality_guardrail
 
 
@@ -104,12 +104,19 @@ async def build_chart_from_prompt(
     else:
         column_profile_section = ""
 
+    chart_type_values = CHART_TYPE_VALUES
+    chart_type_guidance = CHART_TYPE_GUIDANCE
+    if semantics.get("country"):
+        chart_type_guidance = CHART_TYPE_GUIDANCE + MAP_GUIDANCE
+    else:
+        chart_type_values = [v for v in CHART_TYPE_VALUES if v != ChartType.MAP.value]
+
     prompt_text = NL_CHART_PROMPT.format(
         table_name=table_name,
         field_reference=field_reference,
         column_profile_section=column_profile_section,
         prompt=prompt,
-        chart_type_guidance=CHART_TYPE_GUIDANCE,
+        chart_type_guidance=chart_type_guidance,
     )
 
     raw = await generate(prompt_text, stage="nl_authoring")
@@ -120,7 +127,7 @@ async def build_chart_from_prompt(
         raw = raw.split("```")[1].split("```")[0].strip()
 
     chart = json.loads(raw)
-    if chart.get("chart_type") not in CHART_TYPE_VALUES:
+    if chart.get("chart_type") not in chart_type_values:
         raise ValueError(f"Unrecognised chart_type returned by NL chart builder: {chart.get('chart_type')!r}")
 
     is_nonSQL = not CHART_TYPE_REGISTRY[ChartType(chart["chart_type"])]["requires_sql"]
@@ -135,5 +142,8 @@ async def build_chart_from_prompt(
         violation = apply_cardinality_guardrail(chart, profile)
         if violation:
             raise ValueError(violation)
+        
+    if chart.get("chart_type") == ChartType.MAP.value:
+        chart["country"] = semantics.get("country")
         
     return chart

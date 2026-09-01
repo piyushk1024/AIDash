@@ -31,7 +31,6 @@ def _distinct_count_for_alias(profile: dict, alias: str | None) -> int | None:
             return col.get("distinct_count")
     return None
 
-
 def apply_cardinality_guardrail(chart: dict, profile: dict | None) -> str | None:
     """Checks chart cardinality/legibility against profile.distinct_count.
     May mutate `chart` in place (pie -> bar downgrade, same SQL shape, no
@@ -86,6 +85,17 @@ def missing_required_fields(chart: dict, required: tuple[str, ...]) -> list[str]
             missing.append(field)
     return missing
 
+def build_match_rate_note(matched_count: int, total_count: int) -> str | None:
+    """Informational only — map charts always render matched rows, never
+    rejected on match rate (per product decision). Returns a note string
+    when any rows are unmatched, else None. Caller attaches this to the
+    chart's reasoning/notes, not treated as a validation failure."""
+    if total_count == 0:
+        return "No rows returned to match against geo_reference."
+    unmatched = total_count - matched_count
+    if unmatched == 0:
+        return None
+    return f"{unmatched} of {total_count} cities could not be matched to a known location and are excluded from the map."
 
 def clean_and_validate_charts(charts: list) -> list:
     """Drops charts with missing required fields, an unrecognised

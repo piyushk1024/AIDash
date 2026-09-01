@@ -31,6 +31,8 @@ async def _get_common_deps(db, dataset_id: str, user_id: str, mode: str) -> tupl
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
         raise HTTPException(status_code=404, detail="No semantics found. Run inference first.")
+    semantics = semantics["semantics_json"]
+    
 
     owner = await get_dataset_owner(db, dataset_id)
     if owner != user_id:

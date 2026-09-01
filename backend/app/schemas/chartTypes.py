@@ -3,11 +3,11 @@ from enum import Enum
 
 class ChartType(str, Enum):
     """
-    Single source of truth for chart types Dasher can request from Metabase.
+    Single source of truth for chart types Dasher can request.
 
     Consumed by: agentTools.py (tool schema enum + prompt), dashboardPlanner.py,
-    selfHealer.py, nlChartBuilder.py (prompt text), and metabaseClient.py
-    (visualization_settings construction).
+    selfHealer.py, nlChartBuilder.py (prompt text), and queryExecutor.py
+    (Plotly spec construction).
 
     Adding a value here does not automatically make it usable end-to-end —
     it also needs an entry in CHART_TYPE_REGISTRY below. See TIER_A / TIER_B.
@@ -25,6 +25,7 @@ class ChartType(str, Enum):
     HISTOGRAM = "histogram"
     BOX = "box"
     HEATMAP = "heatmap"
+    MAP = "map"
 
 
 # ── Registry — single source of truth per type ──────────────
@@ -46,7 +47,6 @@ class ChartType(str, Enum):
 #                          render time (hoisted from queryExecutor.py's old
 #                          _PASSTHROUGH_REQUIRED_KEYS, same shape, same values)
 #
-# PIVOT has no entry — Metabase only supports pivot tables for GUI
 # query-builder cards, never native SQL cards, which is what Dasher always
 # sends, so it stays permanently unsupported.
 
@@ -147,6 +147,14 @@ CHART_TYPE_REGISTRY = {
         "viz_params_required_keys": None,
          "requires_sql": False,
     },
+        ChartType.MAP: {
+        "category": "map",
+        "required_aliases": ("x_alias", "y_alias"),
+        "series_capable": False,
+        "plotly_type": "scattermap",
+        "viz_params_required_keys": None,
+        "requires_sql": True,
+    },
 }
 
 
@@ -174,7 +182,10 @@ SANKEY_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "s
 PASSTHROUGH_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "passthrough"}
 
 CORRELATION_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "correlation"}
+
 NO_SQL_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if not r["requires_sql"]}
+
+MAP_TYPES = {t for t, r in CHART_TYPE_REGISTRY.items() if r["category"] == "map"}
 
 # Everything with structured params Dasher builds itself — i.e. every
 # registered type except passthrough (which the LLM hand-writes viz_params
@@ -247,4 +258,9 @@ CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a di
   ["price", "rating", "reviews"]); omit columns for the full matrix across
   all numeric columns. Use only when the user explicitly asks for a
   correlation matrix or heatmap, optionally scoped to named columns.
+"""
+
+MAP_GUIDANCE = """- map: first column is a city-name dimension (x_alias), second is a
+  measure (y_alias) sized as bubble radius. City names must be raw values
+  from the data, not aggregated or renamed beyond a simple GROUP BY alias.
 """

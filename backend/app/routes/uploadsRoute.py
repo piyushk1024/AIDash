@@ -89,8 +89,7 @@ async def upload_csv(
         )
 
     # field_map now comes straight from the load result — col_types was
-    # already computed while creating the table, same base_type shape
-    # Metabase's sync used to return.
+    # already computed while creating the table, same base_type shape    
     field_map = {col: {"base_type": base_type} for col, base_type in load_result["columns"].items()}
 
     await persist_dataset_metadata(

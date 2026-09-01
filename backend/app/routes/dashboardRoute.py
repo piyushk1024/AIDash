@@ -45,6 +45,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
             status_code=404,
             detail="No semantics found for this dataset. Run inference first.",
         )
+    semantics = semantics["semantics_json"]
 
     metadata = await get_dataset_metadata(db, dataset_id)
     if not metadata:

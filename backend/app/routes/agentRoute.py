@@ -49,6 +49,7 @@ async def _setup_agent_run(dataset_id, db, current_user, goal_raw, nudge):
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
         raise HTTPException(status_code=404, detail="No semantics found. Run inference first.")
+    semantics = semantics["semantics_json"]
 
     owner = await get_dataset_owner(db, dataset_id)
     if owner != current_user.user_id:

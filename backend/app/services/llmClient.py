@@ -28,6 +28,9 @@ def build_semantics_prompt(context: str, business_hint: str | None = None) -> st
     - dataset_id: string
     - business_hint: string or null
     - dataset_grain: string (e.g. "daily per mall")
+    - country: "IN", "US", or null — infer from column names, categorical
+      values (city/state names, currency symbols, phone formats), or
+      business_hint. Null if no confident signal exists. Do not guess.
     - date_columns: list of {{column, semantic_role, confidence, chartable}}
     - dimensions: list of {{column, semantic_role, confidence, chartable}}
     - measures: list of {{column, semantic_role, confidence, chartable, heterogeneous, filter_column}}
@@ -38,11 +41,10 @@ def build_semantics_prompt(context: str, business_hint: str | None = None) -> st
 
     Rules for chartable:
     - Set chartable: false for serial numbers, row IDs, and any column that is purely an identifier with no analytical value
-    - Set chartable: false for any column where distinct_count exceeds 30 and the values are not meaningful categories (e.g. free text, unique names, codes)
     - Set chartable: false for name columns, description columns, and any free-text column regardless of distinct_count
     - Set chartable: true for all measures, flags, and date columns
-    - Set chartable: true for categorical dimensions where distinct_count is 30 or fewer
-    - Default to false when uncertain about a dimension — it is better to exclude than to produce an unreadable chart
+    - Set chartable: true for categorical dimensions regardless of distinct_count — cardinality legibility is enforced per chart type at build time (see chartValidation.py), not at the semantics stage
+    - Default to false when uncertain about a dimension's analytical value
 
     Confidence is a float between 0 and 1.
     Do not include any explanation or markdown. Return raw JSON only.

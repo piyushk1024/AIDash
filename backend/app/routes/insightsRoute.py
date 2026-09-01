@@ -29,6 +29,8 @@ async def post_insight(
     semantics = await get_cached_semantics(db, dataset_id)
     if not semantics:
         raise HTTPException(status_code=404, detail="No semantics found. Run inference first.")
+    semantics = semantics["semantics_json"]
+    
     owner = await get_dataset_owner(db, dataset_id)
     if owner != current_user.user_id:
         raise HTTPException(status_code=403, detail="Access denied")
