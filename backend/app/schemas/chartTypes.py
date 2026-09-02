@@ -260,7 +260,36 @@ CHART_TYPE_GUIDANCE = """- Measures stay numeric: never format a value into a di
   correlation matrix or heatmap, optionally scoped to named columns.
 """
 
-MAP_GUIDANCE = """- map: first column is a city-name dimension (x_alias), second is a
-  measure (y_alias) sized as bubble radius. City names must be raw values
-  from the data, not aggregated or renamed beyond a simple GROUP BY alias.
+MAP_GUIDANCE = """- map: first column is a dimension (x_alias), second is a measure
+  (y_alias) sized as bubble radius. Set the top-level "granularity" field
+  to "city" or "state" based on what the user asked for — this is
+  separate from and unrelated to anything inside your SQL.
+
+  City-level (top-level granularity: "city"): x_alias is a raw city-name
+  column from the data, not aggregated or renamed beyond a simple GROUP
+  BY alias.
+    SELECT city AS city_name, SUM(revenue) AS total_revenue
+    FROM "{table}" GROUP BY city
+
+  State-level, data already has a state column (top-level granularity:
+  "state"): group by that column directly, same as city-level.
+    SELECT state AS state_name, SUM(revenue) AS total_revenue
+    FROM "{table}" GROUP BY state
+
+  State-level, data only has city (top-level granularity: "state"):
+  resolve state by joining the city column against a reference table of
+  known cities, then GROUP BY the resolved state. Note the reference
+  table's own rows are looked up at city grain internally — this has no
+  bearing on your top-level "granularity" field, which is still "state"
+  because that's what the finished chart shows.
+    SELECT ref.state AS state_name, SUM(t.revenue) AS total_revenue
+    FROM "{table}" t
+    JOIN geo_reference ref
+      ON ref.granularity = 'city' AND ref.country = '{country}'
+      AND lower(t.city) = ref.name
+    GROUP BY ref.state
+
+  Use whatever aggregation fits the request (SUM, AVG, COUNT, MAX, etc.)
+  — these are illustrative, not fixed. geo_reference is the only table
+  besides the dataset's own table you may reference.
 """

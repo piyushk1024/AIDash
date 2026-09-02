@@ -11,12 +11,13 @@ def normalize_city_name(raw: str) -> str:
     return ascii_folded.strip().lower()
 
 
-async def match_cities(pool, rows: list[dict], x_alias: str, country: str) -> dict:
+async def match_cities(pool, rows: list[dict], x_alias: str, country: str, granularity: str = "city") -> dict:
     """
-    Matches each row's city-name column against geo_reference at city
-    granularity. Exact-or-alias only, no fuzzy matching (see decisions.md —
-    same-named-city collisions across states are an accepted gap, not
-    something this function resolves).
+    Matches each row's name column (city or state, per granularity)
+    against geo_reference at the given granularity. Exact-or-alias only,
+    no fuzzy matching (see decisions.md — same-named-city collisions
+    across states are an accepted gap, not something this function
+    resolves).
 
     Mutates nothing on the input rows; returns new dicts with lat/lon and
     match_status attached. Never rejects or drops rows itself — threshold
@@ -36,14 +37,14 @@ async def match_cities(pool, rows: list[dict], x_alias: str, country: str) -> di
                 """
                 SELECT name, lat, lon
                 FROM geo_reference
-                WHERE granularity = 'city'
-                  AND country = $1
-                  AND (name = ANY($2::text[]) OR aliases && $2::text[])
+                WHERE granularity = $1
+                  AND country = $2
+                  AND (name = ANY($3::text[]) OR aliases && $3::text[])
                 """,
-                country, candidate_names,
+                granularity, country, candidate_names,
             )
         for r in records:
-            matched_lookup[r["name"]] = (float(r["lat"]), float(r["lon"]))
+            matched_lookup[r["name"]] = (float(r["lat"]), float(r["lon"]))    
 
     result_rows = []
     matched_count = 0

@@ -3,6 +3,14 @@ from app.services.sqlGuard import validate_sql
 from decimal import Decimal
 import math
 from app.schemas.chartTypes import ChartType, CHART_TYPE_REGISTRY, CHART_TYPE_VALUES
+import json
+from pathlib import Path
+
+INDIA_BORDER_GEOJSON_PATH = Path(__file__).parent.parent / "static" / "geo" / "india-land-simplified.geojson"
+
+def _load_india_border_geojson() -> dict:
+    with open(INDIA_BORDER_GEOJSON_PATH) as f:
+        return json.load(f)
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +318,10 @@ async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
     from app.services.geoReference import match_cities
     from app.services.chartValidation import build_match_rate_note
 
+    print("MAP DEBUG sql:", chart.get("sql"))
+    print("MAP DEBUG granularity:", chart.get("granularity"))
+    print("MAP DEBUG rows sample:", rows[:5])
+
     title = chart.get("chart_title", "")
     x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
     _require_aliases(ChartType.MAP, x_alias, y_alias, title)
@@ -318,7 +330,11 @@ async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
     if not country:
         raise ValueError(f"Map chart missing country ({title})")
 
-    match_result = await match_cities(pool, rows, x_alias, country)
+    match_result = await match_cities(pool, rows, x_alias, country, chart.get("granularity", "city"))
+
+    print("MAP DEBUG matched_count/total:", match_result["matched_count"], "/", match_result["total_count"])
+    print("MAP DEBUG matched sample:", match_result["rows"][:5])
+
     matched_rows = [r for r in match_result["rows"] if r["match_status"] == "matched"]
 
     if not matched_rows:
@@ -353,14 +369,24 @@ async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
     center_lat = (min(lats) + max(lats)) / 2
     center_lon = (min(lons) + max(lons)) / 2
 
+    span = max(max(lats) - min(lats), max(lons) - min(lons), 0.01)
+    zoom = max(2, min(8, 8 - span / 10))
+
     layout = {
         "title": {"text": title},
         "map": {
             "style": "open-street-map",
             "center": {"lat": center_lat, "lon": center_lon},
-            "zoom": 3,
+            "zoom": zoom,
         },
     }
+    layout["map"]["layers"] = [{
+        "source": _load_india_border_geojson(),
+        "type": "line",
+        "color": "#B092AD",
+        "line": {"width": 1},
+    }]
+    #B092AD
     
     note = build_match_rate_note(match_result["matched_count"], match_result["total_count"])
     if note:

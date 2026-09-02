@@ -145,5 +145,6 @@ async def build_chart_from_prompt(
         
     if chart.get("chart_type") == ChartType.MAP.value:
         chart["country"] = semantics.get("country")
+        chart.setdefault("granularity", "city")
         
     return chart

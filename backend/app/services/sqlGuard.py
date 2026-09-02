@@ -16,6 +16,10 @@ DISALLOWED_NODE_TYPES = (
     exp.Command,  # catches unparsed/DDL-ish statements sqlglot doesn't model explicitly
 )
 
+ADDITIONAL_ALLOWED_TABLES = {"geo_reference"}  # read-only reference data,
+# explicitly whitelisted per chart type as needed — not a general
+# multi-table allowance. See map chart type (state-level aggregation).
+
 def validate_sql(sql: str, expected_table: str, context: str = "") -> None:
     """
     Parses sql into an AST and raises ValueError unless it is a single
@@ -47,7 +51,7 @@ def validate_sql(sql: str, expected_table: str, context: str = "") -> None:
             table_name = node.name
             if table_name in cte_names:
                 continue
-            if table_name != expected_table:
+            if table_name != expected_table and table_name not in ADDITIONAL_ALLOWED_TABLES:
                 raise ValueError(
                     f"SQL rejected — references table '{table_name}', expected '{expected_table}'{label}"
                 )
