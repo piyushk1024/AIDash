@@ -1,18 +1,15 @@
 import { useState, useRef, forwardRef, useImperativeHandle  } from 'react'
 import { api } from '../../lib/api'
-// import { useAutocomplete, AutocompleteInput } from './NLInput'
-import Plot from 'react-plotly.js'
-import Plotly from 'plotly.js/dist/plotly'
 
 import { useAutocomplete } from './useAutocomplete'
 import { AutocompleteInput } from './NLInput'
 import { useToast } from '../../hooks/useToast'
-import Toast from '../steps/Toast'
+// import Toast from '../steps/Toast'
 import Modal from '../Modal'
+import createPlotlyComponent from 'react-plotly.js/factory'
+import Plotly from '../../lib/plotly-custom'
+const Plot = createPlotlyComponent(Plotly)
 
-// import createPlotlyComponent from 'react-plotly.js/factory'
-// import Plotly from '../../lib/plotly-custom'
-// const Plot = createPlotlyComponent(Plotly)
 
 // --- RenderedChartCard ---
 // Card shape: {card_id, chart_title, chart_type, rows, spec, healed, failed, source}.

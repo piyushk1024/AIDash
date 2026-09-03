@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams } from 'react-router'
-import Plot from 'react-plotly.js'
-import Plotly from 'plotly.js/dist/plotly'
+import createPlotlyComponent from 'react-plotly.js/factory'
+import Plotly from '../lib/plotly-custom'
+const Plot = createPlotlyComponent(Plotly)
+
 import { api } from '../lib/api'
 import { useTheme } from '../hooks/useTheme'
 import Modal from './Modal'
@@ -70,6 +72,7 @@ function PublicChartCard({ chart }) {
   const plotLayout = {
     autosize: true,
     margin: { t: 32, r: 16, b: 60, l: 60 },
+    ...chart.spec.layout,
     xaxis: { automargin: true, ...chart.spec.layout?.xaxis },
     yaxis: { automargin: true, ...chart.spec.layout?.yaxis },    
   }
