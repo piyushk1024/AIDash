@@ -83,7 +83,8 @@ async def get_cached_semantics(pool: asyncpg.Pool, dataset_id: str):
             "SELECT semantics_json, business_hint FROM dataset_semantics WHERE dataset_id = $1",
             dataset_id,
         )
-        return {"semantics_json": row["semantics_json"], "business_hint": row["business_hint"]} if row else None
+    
+    return {"semantics_json": row["semantics_json"], "business_hint": row["business_hint"]} if row else None
 
 
 async def persist_semantics(
@@ -119,6 +120,7 @@ async def get_cached_dashboard_plan(pool: asyncpg.Pool, dataset_id: str, mode: s
             """,
             dataset_id, mode,
         )
+        
         return row["plan_json"] if row else None
 
 

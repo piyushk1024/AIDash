@@ -35,7 +35,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
 
     cached = await get_cached_dashboard_plan(db, dataset_id, mode="pipeline")
     stale = await is_plan_stale(db, dataset_id, mode="pipeline") if cached else False
-    # print(f"STALE CHECK: cached={bool(cached)} stale={stale}")
+    
     if cached and not stale:
         return cached
 
@@ -57,7 +57,7 @@ async def generate_plan(dataset_id: str, db=Depends(get_db), current_user=Depend
     await persist_profile_json(db, dataset_id, profile)
 
     try:
-        plan = await generate_dashboard_plan(dataset_id, semantics["semantics_json"], profile, table_name, field_map)
+        plan = await generate_dashboard_plan(dataset_id, semantics, profile, table_name, field_map)
     except LLMUnavailableError as e:
         raise HTTPException(status_code=503, detail=f"AI provider ({e.provider}) is currently unavailable. Please try again shortly.")
 
@@ -118,17 +118,14 @@ async def build_dashboard(
         result, error = await build_card_with_healing(
             chart, field_map, db, table_name, existing_id=chart.get("card_id"),profile=profile
         )
-        # print("DEBUG error value:", error)
-        
+                
         if error:
             errors.append(error)
             if is_llm_in_cooldown():
                 provider_unavailable = True
             continue
         
-        # print("DEBUG chart keys:", list(chart.keys()))
-        # print("DEBUG result keys:", list(result.keys()) if result else "result is None")
-
+        
         # Persisted chart carries the union of the plan's chart definition
         # (x_alias/y_alias/series_alias/viz_params — needed to rebuild or
         # heal this chart again later) and the build result (card_id/rows/

@@ -63,6 +63,7 @@ async def _dispatch_chart_upsert(
     step: int,
     table_name: str,
     profile: dict | None,
+    semantics: dict | None,
     *,
     mode: str,  # "build" or "edit"
 ) -> tuple[dict, dict, bool]:
@@ -102,6 +103,10 @@ async def _dispatch_chart_upsert(
             return observation, trace_entry, False
 
     chart_spec = _extract_chart_spec(tool_args)
+
+    if chart_spec.get("chart_type") == ChartType.MAP.value:
+        chart_spec["country"] = (semantics or {}).get("country")
+        chart_spec.setdefault("granularity", "city")
 
     if not is_nonSQL:
         try:
@@ -171,9 +176,10 @@ async def dispatch_build_and_add_chart(
     step: int,
     table_name: str,
     profile: dict | None = None,
+    semantics: dict | None = None,
 ) -> tuple[dict, dict, bool]:
     return await _dispatch_chart_upsert(
-        tool_args, pool, field_map, charts_built, step, table_name, profile, mode="build",
+        tool_args, pool, field_map, charts_built, step, table_name, profile, semantics, mode="build",
     )
 
 
@@ -185,9 +191,10 @@ async def dispatch_edit_existing_chart(
     step: int,
     table_name: str,
     profile: dict | None = None,
+    semantics: dict | None = None,
 ) -> tuple[dict, dict, bool]:
     return await _dispatch_chart_upsert(
-        tool_args, pool, field_map, charts_built, step, table_name, profile, mode="edit",
+        tool_args, pool, field_map, charts_built, step, table_name, profile, semantics, mode="edit",
     )
 async def dispatch_delete_existing_chart(
     tool_args: dict,

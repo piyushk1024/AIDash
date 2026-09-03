@@ -2,14 +2,14 @@ import json
 import logging
 from typing import AsyncGenerator
 from app.services.llm import generate, generate_with_tools
-from app.services.agentTools import TOOL_SCHEMAS, SYSTEM_PROMPT
+from app.services.agentTools import build_tool_schemas, SYSTEM_PROMPT
 from app.services.agentDispatch import (
     dispatch_inspect_data,
     dispatch_build_and_add_chart,
     dispatch_edit_existing_chart,
     dispatch_delete_existing_chart,
 )
-from app.schemas.chartTypes import CHART_TYPE_GUIDANCE
+from app.schemas.chartTypes import CHART_TYPE_GUIDANCE, MAP_GUIDANCE
 from app.services.database import json_default
 from app.config import settings
 from app.services.quotaGuard import get_current_user_quota
@@ -109,8 +109,8 @@ def _build_assistant_message(msg) -> dict:
     return {"role": "assistant", "content": msg.content}
 
 
-def _get_available_tools(inspect_count: int, has_existing_charts: bool) -> list[dict]:
-    tools = TOOL_SCHEMAS
+def _get_available_tools(inspect_count: int, has_existing_charts: bool, has_country: bool) -> list[dict]:
+    tools = build_tool_schemas(has_country)
     if inspect_count >= settings.AGENT_MAX_INSPECT_CALLS:
         tools = [t for t in tools if t["function"]["name"] != "inspect_data"]
     if not has_existing_charts:
@@ -194,13 +194,18 @@ async def stream_agent(
     existing_charts_section = _build_existing_charts_section(agent_charts )
     has_existing_charts = bool(existing_charts)
 
+    has_country = bool(semantics.get("country"))
+    chart_type_guidance = CHART_TYPE_GUIDANCE
+    if has_country:
+        chart_type_guidance = CHART_TYPE_GUIDANCE + MAP_GUIDANCE
+
     system_content = SYSTEM_PROMPT.format(
         table_name=table_name,
         field_reference=field_reference,
         profile_summary=profile_summary,
         existing_charts_section=existing_charts_section,
         goal=goal,
-        chart_type_guidance=CHART_TYPE_GUIDANCE,
+        chart_type_guidance=chart_type_guidance,
     )
 
     messages = [{"role": "user", "content": system_content}]
@@ -212,7 +217,7 @@ async def stream_agent(
         return await execute_raw_query(pool, sql, table_name)
 
     for iteration in range(settings.AGENT_MAX_ITERATIONS):
-        available_tools = _get_available_tools(inspect_count, has_existing_charts)
+        available_tools = _get_available_tools(inspect_count, has_existing_charts, has_country)
         msg = await generate_with_tools(messages, available_tools, stage="agent")
         messages.append(_build_assistant_message(msg))
 
@@ -271,9 +276,9 @@ async def stream_agent(
 
         elif tool_name == "build_and_add_chart":
             observation, trace_entry, healed = await dispatch_build_and_add_chart(
-                tool_args=tool_args, pool=pool, field_map=field_map,
-                charts_built=charts_built, step=iteration + 1, table_name=table_name,
-                profile=profile,)
+            tool_args=tool_args, pool=pool, field_map=field_map,
+            charts_built=charts_built, step=iteration + 1, table_name=table_name,
+            profile=profile, semantics=semantics,)
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
             yield {"type": "chart_built" if observation.get("success") else "chart_failed", **trace_entry}
@@ -282,7 +287,7 @@ async def stream_agent(
             observation, trace_entry, healed = await dispatch_edit_existing_chart(
                 tool_args=tool_args, pool=pool, field_map=field_map,
                 charts_built=charts_built, step=iteration + 1, table_name=table_name,
-                profile=profile,)
+                profile=profile,semantics=semantics,)
             if healed:
                 yield {"type": "healing", "step": iteration + 1, "chart_title": tool_args.get("chart_title", "")}
             yield {"type": "chart_edited" if observation.get("success") else "chart_edit_failed", **trace_entry}

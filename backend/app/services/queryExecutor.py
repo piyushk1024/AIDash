@@ -318,9 +318,7 @@ async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
     from app.services.geoReference import match_cities
     from app.services.chartValidation import build_match_rate_note
 
-    print("MAP DEBUG sql:", chart.get("sql"))
-    print("MAP DEBUG granularity:", chart.get("granularity"))
-    print("MAP DEBUG rows sample:", rows[:5])
+    
 
     title = chart.get("chart_title", "")
     x_alias, y_alias = chart.get("x_alias"), chart.get("y_alias")
@@ -330,11 +328,7 @@ async def _build_map_spec(pool, rows: list[dict], chart: dict) -> dict:
     if not country:
         raise ValueError(f"Map chart missing country ({title})")
 
-    match_result = await match_cities(pool, rows, x_alias, country, chart.get("granularity", "city"))
-
-    print("MAP DEBUG matched_count/total:", match_result["matched_count"], "/", match_result["total_count"])
-    print("MAP DEBUG matched sample:", match_result["rows"][:5])
-
+    match_result = await match_cities(pool, rows, x_alias, country, chart.get("granularity", "city"))    
     matched_rows = [r for r in match_result["rows"] if r["match_status"] == "matched"]
 
     if not matched_rows:

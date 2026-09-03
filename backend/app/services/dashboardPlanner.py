@@ -3,7 +3,8 @@ from app.services.llm import generate
 from app.services.sqlGuard import validate_sql
 from app.schemas.chartTypes import (
     CHART_TYPE_GUIDANCE,
-    CHART_TYPE_VALUES,
+    MAP_GUIDANCE,
+    CHART_TYPE_VALUES,    
     ChartType,
     DIMENSION_MEASURE_TYPES,
     MEASURE_PAIR_TYPES,
@@ -151,6 +152,13 @@ async def generate_dashboard_plan(
 
     field_reference = _build_field_reference(filtered_field_map, semantics)
 
+    chart_type_values = CHART_TYPE_VALUES
+    chart_type_guidance = CHART_TYPE_GUIDANCE
+    if semantics.get("country"):
+        chart_type_guidance = CHART_TYPE_GUIDANCE + MAP_GUIDANCE
+    else:
+        chart_type_values = [v for v in CHART_TYPE_VALUES if v != ChartType.MAP.value]
+
     profile_summary = {
         "columns": filtered_profile_cols,
         "grouped_stats": profile.get("grouped_stats", {}),
@@ -161,7 +169,7 @@ async def generate_dashboard_plan(
         dataset_id=dataset_id,
         field_reference=field_reference,
         profile_summary=json.dumps(profile_summary, indent=2),
-        chart_type_guidance=CHART_TYPE_GUIDANCE,
+        chart_type_guidance=chart_type_guidance,
     )
 
     raw = await generate(prompt, stage="planner")
@@ -181,10 +189,14 @@ async def generate_dashboard_plan(
     safe_charts = []
     for chart in parsed.get("charts", []):
         chart_type_str = chart.get("chart_type")
-        if chart_type_str not in CHART_TYPE_VALUES:
+        if chart_type_str not in chart_type_values:
             continue
 
         chart_type = ChartType(chart_type_str)
+
+        if chart_type == ChartType.MAP:
+            chart["country"] = semantics.get("country")
+            chart.setdefault("granularity", "city")            
 
         if chart_type in DIMENSION_MEASURE_TYPES or chart_type in MEASURE_PAIR_TYPES:
             if not chart.get("x_alias") or not chart.get("y_alias"):
@@ -204,6 +216,7 @@ async def generate_dashboard_plan(
         # SQL guard below since it's cheap and needs no parsing. Violation
         # reason is discarded here — pipeline mode silently drops rather
         # than surfacing an error (no user to report to at plan-gen time).
+
         violation = apply_cardinality_guardrail(chart, profile)
         if violation:
             continue
